@@ -173,3 +173,9 @@ from .joint_structural_action import (
     commit_joint_connection, cayley_retraction, paired_restriction_maps,
     assemble_paired_connection_laplacian, two_sided_connection_dirichlet_energy,
 )
+
+# v5.10 canonical runtime
+from .runtime import (
+    LGAERuntime, RuntimeConfig, RuntimeMode, RuntimeSnapshot,
+    RuntimePhase, RuntimeEvent, RuntimeStepResult,
+)

@@ -11,58 +11,58 @@
     "beats_effective_resistance": false,
     "cases": [
       {
-        "effective_resistance_regret": 0.002000178813934328,
+        "effective_resistance_regret": 0.0020004172325134295,
         "family": "small_world",
-        "learned_regret": 0.002000059604644777,
+        "learned_regret": 0.0020001192092895526,
         "oracle_delta": 0.0
       },
       {
         "effective_resistance_regret": 0.0,
         "family": "scale_free",
         "learned_regret": 0.0,
-        "oracle_delta": 0.12239554929733276
+        "oracle_delta": 0.12239566850662231
       },
       {
-        "effective_resistance_regret": 0.014459207653999329,
+        "effective_resistance_regret": 0.014459103345870972,
         "family": "geometric",
-        "learned_regret": 0.005627244710922241,
-        "oracle_delta": 0.10461911219358444
+        "learned_regret": 0.014459103345870972,
+        "oracle_delta": 0.10461900043487549
       },
       {
         "effective_resistance_regret": 0.0,
         "family": "small_world",
-        "learned_regret": 0.062404096126556396,
-        "oracle_delta": 0.10332301664352417
+        "learned_regret": 0.06240454316139221,
+        "oracle_delta": 0.10332325506210327
       },
       {
-        "effective_resistance_regret": 0.011838734149932861,
+        "effective_resistance_regret": 0.011839628219604492,
         "family": "scale_free",
-        "learned_regret": 0.1110191941261291,
-        "oracle_delta": 0.1065528135299682
+        "learned_regret": 0.11101958155632013,
+        "oracle_delta": 0.10655317115783686
       },
       {
-        "effective_resistance_regret": 0.004349946975708008,
+        "effective_resistance_regret": 0.004350334405899048,
         "family": "geometric",
-        "learned_regret": 0.10614858567714691,
-        "oracle_delta": 0.16987288403511047
+        "learned_regret": 0.10614922642707825,
+        "oracle_delta": 0.1698732714653015
       },
       {
         "effective_resistance_regret": 0.0,
         "family": "small_world",
-        "learned_regret": 0.07942160964012146,
-        "oracle_delta": 0.0774026255607605
+        "learned_regret": 0.07942208647727966,
+        "oracle_delta": 0.07740316200256347
       },
       {
         "effective_resistance_regret": 0.0,
         "family": "scale_free",
         "learned_regret": 0.0,
-        "oracle_delta": 0.07741281795501709
+        "oracle_delta": 0.07741272854804992
       },
       {
-        "effective_resistance_regret": 0.24052569270133967,
+        "effective_resistance_regret": 0.24052593111991877,
         "family": "geometric",
-        "learned_regret": 0.026892423629760742,
-        "oracle_delta": 0.08571777153015137
+        "learned_regret": 0.02689272165298462,
+        "oracle_delta": 0.08571824836730957
       }
     ],
     "families": [
@@ -70,8 +70,8 @@
       "scale_free",
       "geometric"
     ],
-    "mean_effective_resistance_regret": 0.030352640032768243,
-    "mean_learned_regret": 0.04372369039058685,
+    "mean_effective_resistance_regret": 0.0303528238137563,
+    "mean_learned_regret": 0.04470526464780171,
     "states": 9
   },
   "note": "PASS certifies the v5.8 qualification infrastructure and deterministic held-out evaluation path. Learned structural generalization is claimed only when scientific_generalization_status is PASS.",
@@ -86,19 +86,19 @@
       "tree"
     ],
     "last_step": {
-      "loss": 0.2627287805080414,
-      "ranking_loss": 0.6887227892875671,
+      "loss": 0.2627483010292053,
+      "ranking_loss": 0.6889216899871826,
       "samples": 60,
       "states": 6,
-      "value_loss": -0.2538132965564728
+      "value_loss": -0.25394296646118164
     },
     "states": 18
   },
   "uncertainty_calibration": {
     "coverage_1sigma": 1.0,
     "coverage_2sigma": 1.0,
-    "mean_abs_error": 0.10286389291286469,
-    "mean_predicted_std": 0.6669168472290039,
-    "normalized_error": 0.15847104787826538
+    "mean_abs_error": 0.10268058627843857,
+    "mean_predicted_std": 0.6676620244979858,
+    "normalized_error": 0.15799376368522644
   }
 }
