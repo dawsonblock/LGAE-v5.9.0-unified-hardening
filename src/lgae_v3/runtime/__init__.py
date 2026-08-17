@@ -17,6 +17,10 @@ from .authority import (
     CommitChannel, DEFAULT_BOUNDARIES,
 )
 from .cache_coherence import MutationImpact, CacheRegistry, depends_on, declared_dependencies
+from .adaptive_diagnostics import (
+    DiagnosticLevel, DiagnosticEscalationPolicy, DiagnosticResult,
+    DiagnosticCascade,
+)
 from .canonical_runtime import LGAERuntime, UnauthorizedMutationError
 
 __all__ = [
@@ -37,4 +41,8 @@ __all__ = [
     "CacheRegistry",
     "depends_on",
     "declared_dependencies",
+    "DiagnosticLevel",
+    "DiagnosticEscalationPolicy",
+    "DiagnosticResult",
+    "DiagnosticCascade",
 ]
