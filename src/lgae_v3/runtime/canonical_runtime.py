@@ -32,11 +32,10 @@ from .runtime_config import RuntimeConfig, RuntimeMode
 from .runtime_events import RuntimeEvent, RuntimePhase
 from .runtime_result import RuntimeStepResult
 from .runtime_state import RuntimeSnapshot, snapshot_from_engine, StaleReadError
-
-
-class UnauthorizedMutationError(RuntimeError):
-    """Raised when a component attempts to mutate authoritative state outside
-    the transaction/governance authority (Phase 2 enforcement)."""
+from .authority import (
+    AuthorityBoundary, AuthorityRole, AuthoritativeStateGuard,
+    CommitChannel, UnauthorizedMutationError,
+)
 
 
 class LGAERuntime:
@@ -130,6 +129,17 @@ class LGAERuntime:
         # Generation is the authoritative step counter bound to snapshots.
         self._generation = int(self.engine.step_index)
 
+        # Strict authority boundaries (Phase 2). The engine is the sole commit
+        # authority; proposal/verification components receive read-only guards.
+        self.boundary = AuthorityBoundary()
+        self.boundary.register("engine", AuthorityRole.COMMIT)
+        self.boundary.register("executive", AuthorityRole.PROPOSAL)
+        self.boundary.register("counterfactual_engine", AuthorityRole.VERIFICATION)
+        self.boundary.register("governor", AuthorityRole.VERIFICATION)
+        if self._mpc is not None:
+            self.boundary.register("mpc_planner", AuthorityRole.PROPOSAL)
+        self._commit_channel = CommitChannel(self.engine, self.boundary, component="engine")
+
     # ------------------------------------------------------------------ #
     # Authority boundary helpers (Phase 2 foundation)
     # ------------------------------------------------------------------ #
@@ -138,6 +148,20 @@ class LGAERuntime:
         orchestrator, not a mutator."""
         if self.engine is None:
             raise UnauthorizedMutationError("no commit authority (engine) is bound")
+        self.boundary.assert_can_mutate("engine")
+
+    def guard_for(self, component: str) -> AuthoritativeStateGuard:
+        """Return a read-only authoritative-state guard for a non-commit
+        component. Commit-authority components must use the commit channel."""
+        if self.boundary.role_of(component) == AuthorityRole.COMMIT:
+            raise UnauthorizedMutationError(
+                f"component '{component}' is commit-authority; use the commit channel, not a guard"
+            )
+        return AuthoritativeStateGuard(self.engine, self.boundary, component=component)
+
+    @property
+    def commit_channel(self) -> CommitChannel:
+        return self._commit_channel
 
     @property
     def generation(self) -> int:

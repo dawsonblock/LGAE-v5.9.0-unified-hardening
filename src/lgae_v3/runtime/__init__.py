@@ -12,6 +12,10 @@ from .runtime_config import RuntimeConfig, RuntimeMode
 from .runtime_state import RuntimeSnapshot
 from .runtime_events import RuntimePhase, RuntimeEvent
 from .runtime_result import RuntimeStepResult
+from .authority import (
+    AuthorityRole, AuthorityBoundary, AuthoritativeStateGuard,
+    CommitChannel, DEFAULT_BOUNDARIES,
+)
 from .canonical_runtime import LGAERuntime, UnauthorizedMutationError
 
 __all__ = [
@@ -23,4 +27,9 @@ __all__ = [
     "RuntimeStepResult",
     "LGAERuntime",
     "UnauthorizedMutationError",
+    "AuthorityRole",
+    "AuthorityBoundary",
+    "AuthoritativeStateGuard",
+    "CommitChannel",
+    "DEFAULT_BOUNDARIES",
 ]
