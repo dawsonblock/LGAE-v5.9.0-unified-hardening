@@ -127,6 +127,7 @@ def minimum_level_for(authority_level: Any) -> CertificationLevel:
     return {
         MutationAuthorityLevel.REVERSIBLE: CertificationLevel.SAMPLED_LOCAL,
         MutationAuthorityLevel.STRUCTURAL: CertificationLevel.CERTIFIED_LOCAL,
+        MutationAuthorityLevel.HIGH_IMPACT: CertificationLevel.SAMPLED_GLOBAL,
         MutationAuthorityLevel.IRREVERSIBLE: CertificationLevel.CERTIFIED_GLOBAL,
     }.get(authority_level, CertificationLevel.SAMPLED_LOCAL)
 

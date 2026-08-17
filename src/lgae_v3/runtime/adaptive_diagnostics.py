@@ -60,6 +60,7 @@ class DiagnosticEscalationPolicy:
         default_factory=lambda: {
             MutationAuthorityLevel.REVERSIBLE: DiagnosticLevel.L0_CHEAP,
             MutationAuthorityLevel.STRUCTURAL: DiagnosticLevel.L1_LOCAL,
+            MutationAuthorityLevel.HIGH_IMPACT: DiagnosticLevel.L2_STRUCTURAL,
             MutationAuthorityLevel.IRREVERSIBLE: DiagnosticLevel.L3_EXACT,
         }
     )

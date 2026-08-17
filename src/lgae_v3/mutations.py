@@ -21,12 +21,15 @@ class MutationAuthorityLevel(str, Enum):
       rolled back.  Low evidence threshold.
     - STRUCTURAL: Add/prune edges, topology changes.  Harder to reverse
       but still within the graph's existing capacity.  Medium threshold.
+    - HIGH_IMPACT: v5.10: Topology changes that touch bridges, hubs, or
+      large fractions of connectivity.  Require a global invariant check.
     - IRREVERSIBLE: Changes in representation size, operator family,
       semantic graph roles, or persistent state structure.  Cannot be
       cleanly rolled back.  High evidence threshold.
     """
     REVERSIBLE = "reversible"
     STRUCTURAL = "structural"
+    HIGH_IMPACT = "high_impact"
     IRREVERSIBLE = "irreversible"
 
 

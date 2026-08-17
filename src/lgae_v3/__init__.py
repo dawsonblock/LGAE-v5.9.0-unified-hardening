@@ -179,3 +179,9 @@ from .runtime import (
     LGAERuntime, RuntimeConfig, RuntimeMode, RuntimeSnapshot,
     RuntimePhase, RuntimeEvent, RuntimeStepResult,
 )
+
+# v5.10 governance (mutation authority policy)
+from .governance import (
+    AuthorityRequirement, MutationAuthorityPolicy, DEFAULT_AUTHORITY_POLICY,
+    requirement_for, classify_mutation_authority,
+)
