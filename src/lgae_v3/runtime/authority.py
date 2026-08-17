@@ -22,6 +22,7 @@ from dataclasses import dataclass, field
 from enum import Enum
 from typing import Any, Callable
 
+from ..cache_coherence import GraphReadCoordinator
 from ..types import GraphBuffers
 from .runtime_state import RuntimeSnapshot, snapshot_from_engine
 
@@ -162,27 +163,49 @@ class AuthoritativeStateGuard:
 
 class CommitChannel:
     """The sole channel through which commit-authority components mutate
-    authoritative state. It wraps the engine's transactional commit path."""
+    authoritative state. It wraps the engine's transactional commit path.
 
-    def __init__(self, engine: Any, boundary: AuthorityBoundary, *, component: str = "engine") -> None:
+    Every commit is bracketed by the read coordinator's write epoch
+    (seqlock) so concurrent optimistic readers observe a stale read and
+    retry rather than seeing a half-applied mutation."""
+
+    def __init__(
+        self,
+        engine: Any,
+        boundary: AuthorityBoundary,
+        *,
+        component: str = "engine",
+        read_coordinator: GraphReadCoordinator | None = None,
+    ) -> None:
         boundary.assert_can_mutate(component)
         self._engine = engine
         self._boundary = boundary
         self._component = str(component)
+        self._read_coordinator = read_coordinator
+
+    def _bracket(self, fn: Callable[[], Any]) -> Any:
+        if self._read_coordinator is None:
+            return fn()
+        self._read_coordinator.begin_write()
+        try:
+            return fn()
+        finally:
+            self._read_coordinator.end_write()
 
     @property
     def engine(self) -> Any:
         return self._engine
 
     def evaluate_and_maybe_commit(self, mutation: Any) -> Any:
-        """Delegate to the engine's transactional commit path."""
-        return self._engine.evaluate_and_maybe_commit(mutation)
+        """Delegate to the engine's transactional commit path, bracketed by
+        the read-coordinator write epoch."""
+        return self._bracket(lambda: self._engine.evaluate_and_maybe_commit(mutation))
 
     def evaluate_fiber_action(self, *args, **kwargs) -> Any:
-        return self._engine.evaluate_fiber_action(*args, **kwargs)
+        return self._bracket(lambda: self._engine.evaluate_fiber_action(*args, **kwargs))
 
     def evaluate_gauge_action(self, *args, **kwargs) -> Any:
-        return self._engine.evaluate_gauge_action(*args, **kwargs)
+        return self._bracket(lambda: self._engine.evaluate_gauge_action(*args, **kwargs))
 
     def authority_hash(self) -> str:
         return self._engine.authority_hash()

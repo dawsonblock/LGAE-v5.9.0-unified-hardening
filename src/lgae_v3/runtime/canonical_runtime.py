@@ -21,6 +21,7 @@ import torch
 from torch import Tensor
 
 from ..config import LGAEConfig, ResearchConfig, config_governance_hash
+from ..cache_coherence import GraphReadCoordinator, run_consistent_read, StaleReadError as _CCStaleReadError
 from ..evidence import EvidenceLedger, EvidenceRecord
 from ..evolution import LGAEEngine
 from ..executive import StructuralExecutive, StructuralAction, ACTION_TO_IDX
@@ -138,7 +139,13 @@ class LGAERuntime:
         self.boundary.register("governor", AuthorityRole.VERIFICATION)
         if self._mpc is not None:
             self.boundary.register("mpc_planner", AuthorityRole.PROPOSAL)
-        self._commit_channel = CommitChannel(self.engine, self.boundary, component="engine")
+        # Seqlock-style read coordinator (Phase 3): commits are bracketed by
+        # a write epoch so optimistic readers retry on stale reads.
+        self.read_coordinator = GraphReadCoordinator()
+        self._commit_channel = CommitChannel(
+            self.engine, self.boundary, component="engine",
+            read_coordinator=self.read_coordinator,
+        )
 
     # ------------------------------------------------------------------ #
     # Authority boundary helpers (Phase 2 foundation)
@@ -174,6 +181,22 @@ class LGAERuntime:
     def snapshot(self) -> RuntimeSnapshot:
         """Capture an immutable authoritative snapshot for readers."""
         return snapshot_from_engine(self.engine, generation=self._generation)
+
+    def consistent_read(self, compute_fn: Callable[[], Any]) -> Any:
+        """Run a derived calculation and publish only a generation-consistent
+        result. Retries on stale reads up to ``max_stale_read_retries``.
+
+        This is the canonical reader path: every expensive reader should
+        operate through ``consistent_read`` so no subsystem silently fetches
+        mutable state halfway through a calculation. A read that overlaps a
+        commit raises ``StaleReadError`` and is retried from a new snapshot.
+        """
+        return run_consistent_read(
+            self.read_coordinator,
+            generation_getter=lambda: int(self.engine.graph.version),
+            compute_fn=compute_fn,
+            max_retries=int(self.runtime_config.max_stale_read_retries),
+        )
 
     # ------------------------------------------------------------------ #
     # Canonical cycle phases. Each phase delegates to an existing engine.
