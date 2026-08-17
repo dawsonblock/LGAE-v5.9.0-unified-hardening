@@ -21,6 +21,10 @@ from .adaptive_diagnostics import (
     DiagnosticLevel, DiagnosticEscalationPolicy, DiagnosticResult,
     DiagnosticCascade,
 )
+from .certification import (
+    CertificationLevel, CertificationResult, CertificationError,
+    minimum_level_for, meets_requirement,
+)
 from .canonical_runtime import LGAERuntime, UnauthorizedMutationError
 
 __all__ = [
@@ -45,4 +49,9 @@ __all__ = [
     "DiagnosticEscalationPolicy",
     "DiagnosticResult",
     "DiagnosticCascade",
+    "CertificationLevel",
+    "CertificationResult",
+    "CertificationError",
+    "minimum_level_for",
+    "meets_requirement",
 ]
