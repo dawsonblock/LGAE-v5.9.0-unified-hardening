@@ -31,6 +31,10 @@ from .candidates import (
 from .candidate_retrieval import (
     RetrievalMetrics, RetrievalBenchmark, evaluate_retrieval, brute_force_top_k,
 )
+from .baseline_competition import (
+    BaselineCompetition, CompetitionReport, PolicyResult,
+    select_by_scores, learned_policy_from_scores,
+)
 from .canonical_runtime import LGAERuntime, UnauthorizedMutationError
 
 __all__ = [
@@ -68,4 +72,9 @@ __all__ = [
     "RetrievalBenchmark",
     "evaluate_retrieval",
     "brute_force_top_k",
+    "BaselineCompetition",
+    "CompetitionReport",
+    "PolicyResult",
+    "select_by_scores",
+    "learned_policy_from_scores",
 ]
