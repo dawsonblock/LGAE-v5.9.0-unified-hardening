@@ -21,7 +21,10 @@ import torch
 from torch import Tensor
 
 from ..config import LGAEConfig, ResearchConfig, config_governance_hash
-from ..cache_coherence import GraphReadCoordinator, run_consistent_read, StaleReadError as _CCStaleReadError
+from ..cache_coherence import (
+    GraphReadCoordinator, run_consistent_read, StaleReadError as _CCStaleReadError,
+    CommitEventBus, GraphCommitEvent, ChangeKind,
+)
 from ..evidence import EvidenceLedger, EvidenceRecord
 from ..evolution import LGAEEngine
 from ..executive import StructuralExecutive, StructuralAction, ACTION_TO_IDX
@@ -37,6 +40,7 @@ from .authority import (
     AuthorityBoundary, AuthorityRole, AuthoritativeStateGuard,
     CommitChannel, UnauthorizedMutationError,
 )
+from .cache_coherence import MutationImpact, CacheRegistry
 
 
 class LGAERuntime:
@@ -146,6 +150,10 @@ class LGAERuntime:
             self.engine, self.boundary, component="engine",
             read_coordinator=self.read_coordinator,
         )
+        # Mandatory cache coherence (Phase 4): a commit event bus drives
+        # selective invalidation of declared-cache dependencies.
+        self.commit_event_bus = CommitEventBus()
+        self.cache_registry = CacheRegistry(self.commit_event_bus)
 
     # ------------------------------------------------------------------ #
     # Authority boundary helpers (Phase 2 foundation)
@@ -455,12 +463,25 @@ class LGAERuntime:
                 append_receipt(self._receipt_path, receipt, signing_key=self._signing_key)
             ctx["receipt_hash"] = receipt.get("sha256")
             self._receipt_count += 1
+            # Publish a MutationImpact on the commit event bus so declared
+            # caches are selectively invalidated (Phase 4). Derive the impact
+            # from the chosen action's structural dimension.
+            impact = _impact_for_action(loop_result.chosen_action)
+            self.commit_event_bus.publish(GraphCommitEvent(
+                generation=int(self.engine.graph.version),
+                changes=impact.to_change_kind(),
+                reason="runtime_commit",
+            ))
+            ctx["mutation_impact"] = impact
             self._emit(RuntimePhase.COMMIT, {
                 "authority_hash_after": after_hash,
                 "receipt_hash": ctx["receipt_hash"],
+                "mutation_impact": impact.to_log(),
             })
             self._emit(RuntimePhase.CACHE_INVALIDATE, {
                 "graph_version": int(self.engine.graph.version),
+                "invalidated": self.cache_registry.invalidations[-1]["invalidated"] if self.cache_registry.invalidations else [],
+                "spared": self.cache_registry.invalidations[-1]["spared"] if self.cache_registry.invalidations else [],
             })
             self._emit(RuntimePhase.EVIDENCE, {"evidence_hash": ctx["evidence_hash"]})
         else:
@@ -570,3 +591,26 @@ def _default_utility(graph: GraphBuffers, z: Tensor) -> float:
         d = (z[src] - z[dst]).pow(2).sum(-1)
         w = graph.weight[graph.valid]
         return float(-(w * d).sum().item())
+
+
+def _impact_for_action(action: StructuralAction) -> MutationImpact:
+    """Map a structural action to the state dimensions it can change.
+
+    This is a conservative over-approximation used for cache invalidation.
+    The authoritative impact is the one observed by the transaction itself;
+    this helper gives the runtime a declarative impact for the commit event.
+    """
+    from ..executive import StructuralAction as A
+    if action in (A.ADD_EDGE, A.PRUNE_EDGE):
+        return MutationImpact(topology=True, weights=True, metric=True)
+    if action in (A.REWEIGHT_AFFINITY,):
+        return MutationImpact(weights=True)
+    if action in (A.REWEIGHT_LENGTH,):
+        return MutationImpact(metric=True)
+    if action == A.COUPLED_REWEIGHT:
+        return MutationImpact(weights=True, metric=True)
+    if action in (A.SPAWN_FIBER, A.PRUNE_FIBER):
+        return MutationImpact(fibers=True, latents=True)
+    if action == A.CHANGE_GAUGE:
+        return MutationImpact(gauges=True)
+    return MutationImpact()  # NO_OP

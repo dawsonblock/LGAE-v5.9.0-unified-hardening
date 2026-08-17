@@ -16,6 +16,7 @@ from .authority import (
     AuthorityRole, AuthorityBoundary, AuthoritativeStateGuard,
     CommitChannel, DEFAULT_BOUNDARIES,
 )
+from .cache_coherence import MutationImpact, CacheRegistry, depends_on, declared_dependencies
 from .canonical_runtime import LGAERuntime, UnauthorizedMutationError
 
 __all__ = [
@@ -32,4 +33,8 @@ __all__ = [
     "AuthoritativeStateGuard",
     "CommitChannel",
     "DEFAULT_BOUNDARIES",
+    "MutationImpact",
+    "CacheRegistry",
+    "depends_on",
+    "declared_dependencies",
 ]
