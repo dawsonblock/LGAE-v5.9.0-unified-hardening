@@ -9,6 +9,10 @@ from .authority_policy import (
     AuthorityRequirement, MutationAuthorityPolicy, DEFAULT_AUTHORITY_POLICY,
     requirement_for, classify_mutation_authority,
 )
+from .invariants import (
+    InvariantRegistry, InvariantResult, InvariantSeverity,
+    invariant, register_invariant, DEFAULT_REGISTRY,
+)
 
 __all__ = [
     "AuthorityRequirement",
@@ -16,4 +20,10 @@ __all__ = [
     "DEFAULT_AUTHORITY_POLICY",
     "requirement_for",
     "classify_mutation_authority",
+    "InvariantRegistry",
+    "InvariantResult",
+    "InvariantSeverity",
+    "invariant",
+    "register_invariant",
+    "DEFAULT_REGISTRY",
 ]
