@@ -28,6 +28,9 @@ from .certification import (
 from .candidates import (
     Candidate, CandidateUnion, candidate_id, build_candidate_union,
 )
+from .candidate_retrieval import (
+    RetrievalMetrics, RetrievalBenchmark, evaluate_retrieval, brute_force_top_k,
+)
 from .canonical_runtime import LGAERuntime, UnauthorizedMutationError
 
 __all__ = [
@@ -61,4 +64,8 @@ __all__ = [
     "CandidateUnion",
     "candidate_id",
     "build_candidate_union",
+    "RetrievalMetrics",
+    "RetrievalBenchmark",
+    "evaluate_retrieval",
+    "brute_force_top_k",
 ]
