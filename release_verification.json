@@ -1,0 +1,26 @@
+{
+  "base": "5.8.4",
+  "claim_boundary": "Engineering hardening and integration pass only; no claim of learned policy superiority or universal Cayley speedup.",
+  "full_pytest": {
+    "collected": 719,
+    "failed": 0,
+    "passed": 719
+  },
+  "hardening_source": "5.3.3",
+  "reproducibility": {
+    "python_hash_seeds": [
+      0,
+      1,
+      2,
+      42,
+      123456
+    ],
+    "status": "PASS",
+    "tests": 23
+  },
+  "schema": "LGAE_RELEASE_VERIFICATION_V5_9_0",
+  "scientific_generalization_status": "NOT_YET_QUALIFIED",
+  "source_compile": "PASS",
+  "status": "PASS",
+  "version": "5.9.0"
+}
