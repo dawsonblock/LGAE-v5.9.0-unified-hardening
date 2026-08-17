@@ -25,6 +25,9 @@ from .certification import (
     CertificationLevel, CertificationResult, CertificationError,
     minimum_level_for, meets_requirement,
 )
+from .candidates import (
+    Candidate, CandidateUnion, candidate_id, build_candidate_union,
+)
 from .canonical_runtime import LGAERuntime, UnauthorizedMutationError
 
 __all__ = [
@@ -54,4 +57,8 @@ __all__ = [
     "CertificationError",
     "minimum_level_for",
     "meets_requirement",
+    "Candidate",
+    "CandidateUnion",
+    "candidate_id",
+    "build_candidate_union",
 ]
