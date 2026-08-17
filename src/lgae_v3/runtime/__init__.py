@@ -35,6 +35,9 @@ from .baseline_competition import (
     BaselineCompetition, CompetitionReport, PolicyResult,
     select_by_scores, learned_policy_from_scores,
 )
+from .observability import (
+    MetricsSink, Counter, Gauge, Histogram, read_jsonl,
+)
 from .canonical_runtime import LGAERuntime, UnauthorizedMutationError
 
 __all__ = [
@@ -77,4 +80,9 @@ __all__ = [
     "PolicyResult",
     "select_by_scores",
     "learned_policy_from_scores",
+    "MetricsSink",
+    "Counter",
+    "Gauge",
+    "Histogram",
+    "read_jsonl",
 ]
