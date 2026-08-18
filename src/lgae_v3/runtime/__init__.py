@@ -103,6 +103,10 @@ from .uncertainty_calibration import (
     compute_calibration_metrics, is_well_calibrated,
 )
 from .structural_mpc import MPCPlan, MPCPlanner, plan_with_mpc
+from .joint_action import (
+    SubAction, JointStructuralAction, make_joint_action,
+    joint_action_authority_level,
+)
 from .canonical_runtime import LGAERuntime, UnauthorizedMutationError
 
 __all__ = [
@@ -246,4 +250,8 @@ __all__ = [
     "MPCPlan",
     "MPCPlanner",
     "plan_with_mpc",
+    "SubAction",
+    "JointStructuralAction",
+    "make_joint_action",
+    "joint_action_authority_level",
 ]
