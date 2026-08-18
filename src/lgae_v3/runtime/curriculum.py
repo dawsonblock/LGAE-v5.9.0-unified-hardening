@@ -269,7 +269,13 @@ class CurriculumGenerator:
         entries: list[CurriculumEntry] = []
         for family in families:
             for seed_idx in range(n_seeds):
-                seed = self.base_seed + seed_idx * 1000 + hash(family.value) % 100
+                # v5.11 Phase 14: use SHA-256 instead of hash() for
+                # deterministic seed derivation across PYTHONHASHSEED values.
+                import hashlib
+                family_hash = int.from_bytes(
+                    hashlib.sha256(family.value.encode()).digest()[:4], "big"
+                )
+                seed = self.base_seed + seed_idx * 1000 + family_hash % 100
                 entries.append(CurriculumEntry(
                     family=family,
                     n_nodes=n_nodes,

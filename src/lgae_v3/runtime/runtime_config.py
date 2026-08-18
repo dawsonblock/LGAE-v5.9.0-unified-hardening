@@ -55,9 +55,33 @@ class RuntimeConfig:
 
     def __post_init__(self) -> None:
         if self.mode == RuntimeMode.PRODUCTION:
-            # Production fails closed: receipts must be signed and persisted.
-            if self.require_signed_receipts and self.signing_key is None:
-                raise ValueError("production mode with require_signed_receipts needs a signing_key")
+            # v5.11 Phase 11: production truly fails closed.
+            # Production mode requires ALL of:
+            # - signed receipts with a signing key
+            # - persistent evidence store
+            # - persistent receipt store
+            # - deterministic ordering
+            # - strict authority (enforced by the runtime, not config)
+            if not self.require_signed_receipts:
+                raise ValueError(
+                    "production mode requires require_signed_receipts=True"
+                )
+            if self.signing_key is None:
+                raise ValueError(
+                    "production mode requires a signing_key"
+                )
+            if self.evidence_path is None:
+                raise ValueError(
+                    "production mode requires evidence_path (persistent evidence store)"
+                )
+            if self.receipt_path is None:
+                raise ValueError(
+                    "production mode requires receipt_path (persistent receipt store)"
+                )
+            if not self.deterministic_ordering:
+                raise ValueError(
+                    "production mode requires deterministic_ordering=True"
+                )
         if int(self.mpc_horizon) < 1:
             raise ValueError("mpc_horizon must be >= 1")
         if int(self.max_stale_read_retries) < 0:

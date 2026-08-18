@@ -256,14 +256,22 @@ class StructuralLearningLoop:
         action_idx = ACTION_TO_IDX.get(chosen_action, 0)
         unc_estimate = self.uncertainty_estimator.estimate(obs_vec, action_idx)
         conformal_interval = self.calibrator.interval(unc_estimate.mean) if self.calibrator.calibrated else None
+        # v5.11 Phase 8: activate information gain, cost, and risk.
+        # IG is derived from ensemble disagreement (uncertainty std).
+        # Cost is proportional to the action's structural footprint.
+        # Risk is derived from epistemic uncertainty and OOD score.
+        ig = float(unc_estimate.std) * 0.1  # ensemble disagreement proxy
+        cost = 0.01 if chosen_action != StructuralAction.NO_OP else 0.0
+        risk = float(unc_estimate.std) * float(getattr(unc_estimate, 'ood_score', 0.0))
+        score = unc_estimate.mean + 0.1 * ig - cost - 0.5 * risk
         uncertainty_decision = uncertainty_gated_decision(
             ActionProposal(
                 action=chosen_action,
                 expected_delta_utility=unc_estimate.mean,
-                information_gain=0.0,
-                cost=0.0,
-                risk=0.0,
-                score=unc_estimate.mean,
+                information_gain=ig,
+                cost=cost,
+                risk=risk,
+                score=score,
                 uncertainty=unc_estimate.std,
                 lcb=unc_estimate.lcb,
             ),
