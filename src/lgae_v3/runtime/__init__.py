@@ -102,6 +102,7 @@ from .uncertainty_calibration import (
     negative_log_likelihood, brier_score,
     compute_calibration_metrics, is_well_calibrated,
 )
+from .structural_mpc import MPCPlan, MPCPlanner, plan_with_mpc
 from .canonical_runtime import LGAERuntime, UnauthorizedMutationError
 
 __all__ = [
@@ -242,4 +243,7 @@ __all__ = [
     "brier_score",
     "compute_calibration_metrics",
     "is_well_calibrated",
+    "MPCPlan",
+    "MPCPlanner",
+    "plan_with_mpc",
 ]
