@@ -57,6 +57,7 @@ from .promotion import (
 from .model_registry import (
     ModelRecord, PromotionTransition, ModelRegistry,
 )
+from .decision_trace import TraceEntry, DecisionTrace
 from .canonical_runtime import LGAERuntime, UnauthorizedMutationError
 
 __all__ = [
@@ -130,4 +131,6 @@ __all__ = [
     "ModelRecord",
     "PromotionTransition",
     "ModelRegistry",
+    "TraceEntry",
+    "DecisionTrace",
 ]
