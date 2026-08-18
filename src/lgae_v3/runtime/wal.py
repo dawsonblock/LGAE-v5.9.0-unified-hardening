@@ -439,7 +439,13 @@ def replay_committed_transactions(
                                         dtype=tensor.dtype,
                                         device=tensor.device,
                                     )
-                                    tensor.copy_(restored)
+                                    # Use .data.copy_() to avoid in-place
+                                    # operation on leaf Variable that
+                                    # requires grad.
+                                    if hasattr(tensor, 'data'):
+                                        tensor.data.copy_(restored)
+                                    else:
+                                        tensor.copy_(restored)
                     results.append({
                         "txn_id": txn_id,
                         "kind": "fiber",
