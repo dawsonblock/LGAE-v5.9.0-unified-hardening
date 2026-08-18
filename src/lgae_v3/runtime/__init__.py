@@ -131,6 +131,11 @@ from .sparse_graph import (
     SparseGraph, build_sparse_graph, sparse_adjacency_matrix,
     sparse_to_edge_index,
 )
+from .gpu_path import (
+    get_device, DeviceConfig, move_to_device, batched_message_passing,
+    batched_candidate_scoring, batched_feature_computation,
+    is_gpu_available, device_info,
+)
 from .canonical_runtime import LGAERuntime, UnauthorizedMutationError
 
 __all__ = [
@@ -306,4 +311,12 @@ __all__ = [
     "build_sparse_graph",
     "sparse_adjacency_matrix",
     "sparse_to_edge_index",
+    "get_device",
+    "DeviceConfig",
+    "move_to_device",
+    "batched_message_passing",
+    "batched_candidate_scoring",
+    "batched_feature_computation",
+    "is_gpu_available",
+    "device_info",
 ]
