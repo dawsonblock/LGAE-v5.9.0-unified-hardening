@@ -109,8 +109,11 @@ class AuthoritativeStateGuard:
     """Read-only view of authoritative state for non-commit components.
 
     Non-commit components receive a guard instead of the raw engine. The guard
-    exposes snapshots and read-only graph access; any attempt to call a
-    mutating method raises ``UnauthorizedMutationError``.
+    exposes frozen (immutable) views of graph/fiber/gauge state; any attempt
+    to mutate through the guard raises ``UnauthorizedMutationError``.
+
+    v5.11 Phase 3: graph/fibers/gauges now return frozen views that clone
+    tensors defensively. The raw engine is never exposed.
     """
 
     def __init__(self, engine: Any, boundary: AuthorityBoundary, *, component: str) -> None:
@@ -132,19 +135,27 @@ class AuthoritativeStateGuard:
         return snapshot_from_engine(self._engine)
 
     @property
-    def graph(self) -> GraphBuffers:
-        """Read-only graph access. Mutating graph tensors directly is the
-        caller's responsibility; the runtime never does this from a non-commit
-        component."""
-        return self._engine.graph
+    def graph(self) -> FrozenGraphView:
+        """Frozen (immutable) graph view.
+
+        Returns a FrozenGraphView that defensively clones all tensors.
+        Any attempt to mutate through the view raises
+        ``UnauthorizedMutationError``.
+        """
+        from .state.frozen_views import FrozenGraphView
+        return FrozenGraphView(self._engine.graph)
 
     @property
-    def fibers(self):
-        return self._engine.fibers
+    def fibers(self) -> FrozenFiberView:
+        """Frozen (immutable) fiber view."""
+        from .state.frozen_views import FrozenFiberView
+        return FrozenFiberView(self._engine.fibers)
 
     @property
-    def gauge_connections(self):
-        return getattr(self._engine, "gauge_connections", None)
+    def gauge_connections(self) -> FrozenGaugeView:
+        """Frozen (immutable) gauge view."""
+        from .state.frozen_views import FrozenGaugeView
+        return FrozenGaugeView(getattr(self._engine, "gauge_connections", None))
 
     def authority_hash(self) -> str:
         return self._engine.authority_hash()

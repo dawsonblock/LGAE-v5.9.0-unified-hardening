@@ -1,37 +1,76 @@
-"""v5.11 Phase 0: regression test documenting the guard mutability defect.
+"""v5.11 Phase 3: verify the guard is truly immutable.
 
-AuthoritativeStateGuard.graph returns raw mutable GraphBuffers.
-Callers can do guard.graph.weight[...] = ... to mutate authoritative state,
-bypassing the authority model entirely.
+After Phase 3, guard.graph returns a FrozenGraphView that defensively
+clones tensors. Mutating through the guard raises UnauthorizedMutationError.
 
-This test PASSES against v5.10, proving the defect exists.
-After Phase 3, this test should be replaced with one that verifies
-the guard is truly immutable.
+This test replaces the v5.10 regression test that documented the defect.
 """
 from __future__ import annotations
 
+import pytest
 import torch
 
-from lgae_v3.runtime import LGAERuntime, RuntimeConfig
+from lgae_v3.runtime import LGAERuntime, RuntimeConfig, UnauthorizedMutationError
+from lgae_v3.runtime.state import FrozenGraphView
 from lgae_v3.types import make_graph_buffers
 
 
-def test_guard_graph_is_mutable():
-    """The guard's graph property returns a mutable reference.
-
-    A non-commit component can mutate authoritative state through it.
-    """
+def test_guard_graph_is_immutable():
+    """The guard's graph property returns an immutable FrozenGraphView."""
     graph = make_graph_buffers(6, [(0,1),(1,2),(2,3),(3,4),(4,5)], capacity=32)
     runtime = LGAERuntime(graph, runtime_config=RuntimeConfig())
 
     guard = runtime.guard_for("executive")
-    original_weight = guard.graph.weight.clone()
+    frozen = guard.graph
+    assert isinstance(frozen, FrozenGraphView)
 
-    # DEFECT: we can mutate authoritative state through the guard.
-    guard.graph.weight[0] = guard.graph.weight[0] * 2.0
+    # Mutating the frozen view's weight must NOT change authoritative state.
+    original_weight = graph.weight.clone()
+    frozen_weight = frozen.weight.clone()
 
-    # The authoritative state was mutated.
-    assert not torch.equal(original_weight, guard.graph.weight), (
-        "Expected guard.graph to be mutable (the defect), but it was immutable. "
-        "This test should FAIL after Phase 3 fixes the state isolation."
+    # Try to mutate the frozen tensor — this is a clone, so it won't affect
+    # the authoritative state.
+    frozen_weight[0] = frozen_weight[0] * 2.0
+
+    # The authoritative state must be unchanged.
+    assert torch.equal(original_weight, graph.weight), (
+        "Authoritative state was mutated through the frozen view!"
+    )
+
+    # Setting attributes on the frozen view must raise.
+    with pytest.raises(UnauthorizedMutationError):
+        frozen.weight = torch.zeros(32)
+
+    with pytest.raises(UnauthorizedMutationError):
+        frozen.custom_attr = 123
+
+
+def test_guard_graph_is_frozen_view():
+    """guard.graph returns a FrozenGraphView, not raw GraphBuffers."""
+    graph = make_graph_buffers(6, [(0,1),(1,2),(2,3),(3,4),(4,5)], capacity=32)
+    runtime = LGAERuntime(graph, runtime_config=RuntimeConfig())
+    guard = runtime.guard_for("executive")
+    from lgae_v3.types import GraphBuffers
+    # Must NOT be a raw GraphBuffers.
+    assert not isinstance(guard.graph, GraphBuffers), (
+        "guard.graph should return a FrozenGraphView, not raw GraphBuffers"
+    )
+
+
+def test_guard_fibers_are_frozen():
+    """guard.fibers returns a FrozenFiberView."""
+    graph = make_graph_buffers(6, [(0,1),(1,2),(2,3),(3,4),(4,5)], capacity=32)
+    runtime = LGAERuntime(graph, runtime_config=RuntimeConfig())
+    guard = runtime.guard_for("executive")
+    from lgae_v3.runtime.state import FrozenFiberView
+    assert isinstance(guard.fibers, FrozenFiberView)
+
+    # The fiber tensor must be a clone, not the original.
+    original_z = runtime.engine.fibers().detach().clone()
+    frozen_z = guard.fibers.z
+    frozen_z[0, 0] = frozen_z[0, 0] * 2.0
+    # Original must be unchanged.
+    new_z = runtime.engine.fibers().detach().clone()
+    assert torch.equal(original_z, new_z), (
+        "Authoritative fiber state was mutated through the frozen view!"
     )
