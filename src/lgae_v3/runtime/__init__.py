@@ -107,6 +107,10 @@ from .joint_action import (
     SubAction, JointStructuralAction, make_joint_action,
     joint_action_authority_level,
 )
+from .structural_credit import (
+    CreditAssignment, direct_credit, feature_based_credit,
+    temporal_credit, baseline_credit,
+)
 from .canonical_runtime import LGAERuntime, UnauthorizedMutationError
 
 __all__ = [
@@ -254,4 +258,9 @@ __all__ = [
     "JointStructuralAction",
     "make_joint_action",
     "joint_action_authority_level",
+    "CreditAssignment",
+    "direct_credit",
+    "feature_based_credit",
+    "temporal_credit",
+    "baseline_credit",
 ]
