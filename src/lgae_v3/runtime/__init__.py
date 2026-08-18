@@ -75,6 +75,9 @@ from .checkpointing import Checkpoint, CheckpointChain
 from .wal import (
     WALRecordType, WALRecord, WALTransaction, WriteAheadLog, recover_transactions,
 )
+from .replayable_decisions import (
+    DecisionRecord, DecisionLedger, build_decision_record, verify_replay,
+)
 from .canonical_runtime import LGAERuntime, UnauthorizedMutationError
 
 __all__ = [
@@ -178,4 +181,8 @@ __all__ = [
     "WALTransaction",
     "WriteAheadLog",
     "recover_transactions",
+    "DecisionRecord",
+    "DecisionLedger",
+    "build_decision_record",
+    "verify_replay",
 ]
