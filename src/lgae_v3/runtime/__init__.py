@@ -136,6 +136,10 @@ from .gpu_path import (
     batched_candidate_scoring, batched_feature_computation,
     is_gpu_available, device_info,
 )
+from .batched_counterfactuals import (
+    CounterfactualResult, batched_apply_actions, batched_compute_utilities,
+    batched_counterfactual_eval, select_best_counterfactual,
+)
 from .canonical_runtime import LGAERuntime, UnauthorizedMutationError
 
 __all__ = [
@@ -319,4 +323,9 @@ __all__ = [
     "batched_feature_computation",
     "is_gpu_available",
     "device_info",
+    "CounterfactualResult",
+    "batched_apply_actions",
+    "batched_compute_utilities",
+    "batched_counterfactual_eval",
+    "select_best_counterfactual",
 ]
