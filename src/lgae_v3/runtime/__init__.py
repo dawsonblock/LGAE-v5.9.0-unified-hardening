@@ -97,6 +97,11 @@ from .epistemic_uncertainty import (
     compute_ensemble_uncertainty, compute_distance_penalty,
     estimate_epistemic_uncertainty, verify_ood_uncertainty_property,
 )
+from .uncertainty_calibration import (
+    CalibrationMetrics, expected_calibration_error,
+    negative_log_likelihood, brier_score,
+    compute_calibration_metrics, is_well_calibrated,
+)
 from .canonical_runtime import LGAERuntime, UnauthorizedMutationError
 
 __all__ = [
@@ -231,4 +236,10 @@ __all__ = [
     "compute_distance_penalty",
     "estimate_epistemic_uncertainty",
     "verify_ood_uncertainty_property",
+    "CalibrationMetrics",
+    "expected_calibration_error",
+    "negative_log_likelihood",
+    "brier_score",
+    "compute_calibration_metrics",
+    "is_well_calibrated",
 ]
