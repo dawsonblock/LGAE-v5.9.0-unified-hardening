@@ -406,64 +406,65 @@ def replay_committed_transactions(
             })
             continue
 
-        # Apply the transaction.
+        # Apply the transaction using the shared apply path.
         for mutation in mutations:
-            kind = mutation.get("kind")
-            if kind == "graph":
-                state = mutation.get("shadow_graph_state")
-                if state is not None:
-                    shadow = GraphBuffers.from_state_dict(state)
-                    engine.graph = shadow
-                    engine.graph.bump_version()
-                    if hasattr(engine, "_invalidate_neighbor_indices"):
-                        engine._invalidate_neighbor_indices("wal_recovery")
-                    results.append({
-                        "txn_id": txn_id,
-                        "kind": "graph",
-                        "applied": True,
-                        "new_hash": engine.authority_hash(),
-                    })
-            elif kind == "fiber":
-                fiber_state = mutation.get("fiber_state", {})
-                if fiber_state and hasattr(engine, "fibers"):
-                    # Restore fiber state from serialized snapshot.
-                    fibers = engine.fibers
-                    if hasattr(fibers, "latent"):
-                        for attr in ("latent", "gate_logits", "active_mask", "age",
-                                    "utility_ema", "spawn_counter", "gamma_ema"):
-                            if attr in fiber_state:
-                                tensor = getattr(fibers, attr, None)
-                                if tensor is not None:
-                                    restored = torch.tensor(
-                                        fiber_state[attr],
-                                        dtype=tensor.dtype,
-                                        device=tensor.device,
-                                    )
-                                    # Use .data.copy_() to avoid in-place
-                                    # operation on leaf Variable that
-                                    # requires grad.
-                                    if hasattr(tensor, 'data'):
-                                        tensor.data.copy_(restored)
-                                    else:
-                                        tensor.copy_(restored)
-                    results.append({
-                        "txn_id": txn_id,
-                        "kind": "fiber",
-                        "applied": True,
-                    })
-            elif kind == "gauge":
-                gauge_raw = mutation.get("gauge_raw")
-                if gauge_raw is not None and hasattr(engine, "gauge_connections") \
-                   and engine.gauge_connections is not None:
-                    raw = torch.tensor(
-                        gauge_raw,
-                        dtype=engine.gauge_connections.raw_generators.dtype,
-                        device=engine.gauge_connections.raw_generators.device,
-                    )
-                    engine.gauge_connections.raw_generators.data.copy_(raw)
-                    results.append({
-                        "txn_id": txn_id,
-                        "kind": "gauge",
-                        "applied": True,
-                    })
+            apply_wal_mutation(engine, mutation)
+            results.append({
+                "txn_id": txn_id,
+                "kind": mutation.get("kind", "unknown"),
+                "applied": True,
+                "new_hash": engine.authority_hash() if hasattr(engine, "authority_hash") else "",
+            })
     return results
+
+
+def apply_wal_mutation(engine: Any, mutation: dict[str, Any]) -> None:
+    """Apply a single WAL mutation to an engine.
+
+    v5.11-RC Phase 10: This is the shared apply path used by both:
+    - Normal commit (via CommitChannel._apply)
+    - Recovery replay (via replay_committed_transactions)
+
+    Both paths must produce identical state for the same mutation.
+    """
+    from ..types import GraphBuffers
+    import torch
+
+    kind = mutation.get("kind")
+    if kind == "graph":
+        state = mutation.get("shadow_graph_state")
+        if state is not None:
+            shadow = GraphBuffers.from_state_dict(state)
+            engine.graph = shadow
+            engine.graph.bump_version()
+            if hasattr(engine, "_invalidate_neighbor_indices"):
+                engine._invalidate_neighbor_indices("wal_apply")
+    elif kind == "fiber":
+        fiber_state = mutation.get("fiber_state", {})
+        if fiber_state and hasattr(engine, "fibers"):
+            fibers = engine.fibers
+            if hasattr(fibers, "latent"):
+                for attr in ("latent", "gate_logits", "active_mask", "age",
+                            "utility_ema", "spawn_counter", "gamma_ema"):
+                    if attr in fiber_state:
+                        tensor = getattr(fibers, attr, None)
+                        if tensor is not None:
+                            restored = torch.tensor(
+                                fiber_state[attr],
+                                dtype=tensor.dtype,
+                                device=tensor.device,
+                            )
+                            if hasattr(tensor, 'data'):
+                                tensor.data.copy_(restored)
+                            else:
+                                tensor.copy_(restored)
+    elif kind == "gauge":
+        gauge_raw = mutation.get("gauge_raw")
+        if gauge_raw is not None and hasattr(engine, "gauge_connections") \
+           and engine.gauge_connections is not None:
+            raw = torch.tensor(
+                gauge_raw,
+                dtype=engine.gauge_connections.raw_generators.dtype,
+                device=engine.gauge_connections.raw_generators.device,
+            )
+            engine.gauge_connections.raw_generators.data.copy_(raw)
