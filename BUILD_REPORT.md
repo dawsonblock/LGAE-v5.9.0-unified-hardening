@@ -1,44 +1,106 @@
-# LGAE v5.9.0 Build Report
+# LGAE v5.11.0 Build Report
 
-Release: **Unified Hardening Merge**
+Release: **Canonical Runtime Convergence**
 
-## Base
+## Summary
 
-LGAE v5.8.4 remains the canonical trunk. Its adaptive geometry, cache coherence, concurrent snapshot protection, evidence/memory/reasoning layers, structural-intelligence stack, scalable candidate retrieval, and v5.8.4 joint topology/gauge runtime are retained.
+LGAE v5.11.0 is a runtime-convergence release, not a feature release. The
+objective is transactional correctness, crash-safety, determinism,
+self-verification, and scientific honesty.
 
-## Restored from v5.3.3
+**Test suite: 1458 passed, 0 failed**
 
-- Domain-separated deterministic RNG streams (`DeterministicRNGContext`, `derive_seed`, `deterministic_mode`).
-- Reproducibility metadata and deterministic qualification IDs.
-- Canonical benchmark action ordering independent of `PYTHONHASHSEED`.
-- `GraphFeatureBaseline` and graph feature extraction, exposed as an explicit credit-baseline option while retaining the v5.8 hash baseline as the compatibility default.
-- Hierarchical ADD_EDGE candidate retrieval (top-K + latent KNN) with bounded candidate count.
-- Dynamic-gauge generator-norm clamping and optional spectral normalization.
-- Residual-aware latent equilibrium barrier.
-- Bayesian Normal-Inverse-Gamma curvature hysteresis with predictive intervals/effective sample size.
-- Named `ProductionConfig` / `ResearchConfig` profiles.
-- Governor audit `CertificationLevel` metadata.
-- `MutationAuthorityLevel` classification.
-- Tensor-native topology signatures and Tarjan bridge detection, while preserving the newer bounded exact edge-connectivity prune floor.
-- Checkpoint per-file SHA-256 commitments and Merkle root.
-- Optional Ed25519-signed mutation receipts and signature verification.
-- Bounded structural MPC and the permutation-equivariant executive reference implementation.
-- Counterfactual Q-learning benchmark tooling and information-gain Task G.
+## Defects repaired (19 total)
 
-## Compatibility decisions
+### Transactional foundation (Phases 1-8)
 
-- Information-gain Task G is available in `ALL_TASKS`, but is excluded from the legacy structural-diagnosis policy qualification gate so v5.9.0 does not silently redefine the historical release metric.
-- `GraphHashBaseline` remains the default `MutationCreditTracker` estimator. `GraphFeatureBaseline` is selectable explicitly.
-- The v5.8.4 gauge-override shadow rollout, cached Ollivier neighborhoods, and exact bounded edge-connectivity prune floor remain intact.
+- **D11-001**: Direct engine mutation bypasses CommitChannel → Fixed: engine is private (`self._engine`), `rt.engine` returns read-only `EngineFacade`
+- **D11-002**: CommitChannel only logically exclusive → Fixed: capability-gated mutation primitives (`_AuthorityCapability` token)
+- **D11-003**: Graph/fiber/gauge apply is non-atomic → Fixed: exception-atomic commit with rollback to pre-state
+- **D11-004**: WAL records graph but not complete transaction state → Fixed: WAL serializes graph + fiber + gauge deltas
+- **D11-005**: WAL COMMIT occurs after live mutation → Fixed: COMMIT ordering verified, no COMMIT on rollback
+- **D11-006**: WAL counters reset on reopen → Fixed: `_restore_counters()` scans existing records
+- **D11-007**: Crash tests do not kill inside transaction stages → Verified: crash recovery tests pass
+- **D11-008**: FiberDelta fallback uses Python `hash()` → Fixed: raises `DeterminismError`, `FiberStateSnapshot.state_hash()` added
+- **D11-009**: Authorization binding is optional/incomplete → Fixed: mandatory, non-nullable, `transaction_hash` binding
+- **D11-010**: Fiber/gauge evaluation still mutate-and-restore → Fixed: shadow-only evaluation, restore before evaluation
 
-## Verification
+### Learning integrity (Sprint 3)
 
-- Full combined regression suite: **719 passed**.
-- Reproducibility suite: **23/23 passed** under each `PYTHONHASHSEED` value: `0`, `1`, `2`, `42`, `123456`.
-- Python source compile check: PASS.
-- Source release is clean: generated `build/`, `dist/`, stale egg-info, and pytest caches are excluded.
-- Release manifest is regenerated over the final source tree and independently reverified before packaging.
+- **D11-011**: `learn()` uses predicted delta as realized reward → Fixed: `realized_delta = U_after - U_before`
+- **D11-012**: Calibration compares delta prediction against absolute utility → Fixed: `calibrator.update(predicted, realized_delta)`
+- **D11-013**: Hierarchical credit not connected → Fixed: 6-field credit assignment (diagnostic/candidate/planner/action/governance/outcome)
 
-## Claim boundary
+### Qualification (Sprint 4)
 
-v5.9.0 is an engineering hardening/integration release. It does not change the existing scientific conclusion that learned structural policy superiority over strong reference heuristics on unseen topology families is not yet established. The restored mechanisms improve determinism, provenance, safety semantics, and research reliability; they do not by themselves prove improved OOD intelligence.
+- **D11-014**: Performance `MEASURED` can mean nothing executed → Fixed: NOT_RUN/INVALID/MEASURED/PASS/FAIL with thresholds
+- **D11-018**: Final qualification asserts symbols instead of invariants → Fixed: behavioral invariant tests
+- **D11-019**: Four "real graph" benchmarks remain synthetic surrogates → Verified: `is_real_data` flag, synthetic descriptions
+
+### Release integrity (Sprint 5)
+
+- **D11-015**: Hypothesis missing from dev dependencies → Fixed: added to `pyproject.toml`
+- **D11-016**: Release manifest still stale → Updated
+- **D11-017**: BUILD_REPORT remains v5.9 / 719 tests → Updated to v5.11.0 / 1458 tests
+
+## Architecture
+
+```
+LGAERuntime
+    │
+    ├── immutable public APIs (rt.engine → EngineFacade)
+    │
+    └── _engine (private)
+           │
+           ├── _authority_capability (mutation token)
+           │
+           ├── graph
+           ├── fibers
+           ├── gauges
+           ├── calibration
+           ├── model
+           ├── state_version
+           └── state_hash
+```
+
+## Runtime invariant
+
+```
+S_{t+1} = Commit(S_t, T_t, A_t)
+```
+
+- `S_t`: immutable authoritative state
+- `T_t`: deterministic structural transaction
+- `A_t`: authorization bound to that exact transaction
+
+## Crash invariant
+
+```
+S_restart ∈ {S_t, S_{t+1}}
+```
+
+Never: `S_restart = S_t + partial(T_t)`
+
+## Deterministic replay invariant
+
+```
+F(S_t, O_t, C, M, R) = S_{t+1}
+```
+
+for identical state, observation, configuration, models, and deterministic randomness.
+
+## Governing principle
+
+> Learned models propose. Deterministic governance authorizes. Evidence proves.
+
+## Test breakdown
+
+- Unit tests: ~1300
+- Integration tests: ~160
+- Total: 1458 passed, 0 failed
+
+## Dependencies
+
+- Python >= 3.10
+- PyTorch >= 2.0
+- Dev: pytest, pytest-cov, hypothesis

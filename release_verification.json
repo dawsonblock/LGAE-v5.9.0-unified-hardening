@@ -1,12 +1,12 @@
 {
-  "base": "5.8.4",
-  "claim_boundary": "Engineering hardening and integration pass only; no claim of learned policy superiority or universal Cayley speedup.",
+  "base": "5.10.0",
+  "claim_boundary": "Transactional convergence release; no claim of learned policy superiority or universal Cayley speedup without held-out graph-family evidence.",
   "full_pytest": {
-    "collected": 719,
+    "collected": 1458,
     "failed": 0,
-    "passed": 719
+    "passed": 1458
   },
-  "hardening_source": "5.3.3",
+  "hardening_source": "5.11.0-dev",
   "reproducibility": {
     "python_hash_seeds": [
       0,
@@ -18,9 +18,23 @@
     "status": "PASS",
     "tests": 23
   },
-  "schema": "LGAE_RELEASE_VERIFICATION_V5_9_0",
+  "schema": "LGAE_RELEASE_VERIFICATION_V5_11_0",
   "scientific_generalization_status": "NOT_YET_QUALIFIED",
   "source_compile": "PASS",
   "status": "PASS",
-  "version": "5.9.0"
+  "version": "5.11.0-dev",
+  "defects_repaired": 19,
+  "transactional_invariants": {
+    "authoritative_state_ownership": true,
+    "capability_gated_mutation": true,
+    "shadow_only_evaluation": true,
+    "mandatory_authorization_binding": true,
+    "exception_atomic_commit": true,
+    "compare_and_swap_semantics": true,
+    "wal_complete_serialization": true,
+    "wal_counter_restoration": true,
+    "no_python_hash_in_deterministic_paths": true,
+    "realized_delta_learning": true,
+    "hierarchical_credit_assignment": true
+  }
 }
