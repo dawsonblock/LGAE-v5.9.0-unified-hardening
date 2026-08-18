@@ -87,6 +87,11 @@ from .manifold_action import (
     LieGroup, ManifoldAction, exponential_map, compose, inverse,
     make_so3_action, make_su2_action, make_gl_action,
 )
+from .information_gain import (
+    InformationGainEstimate, InformationDirectedReport,
+    ensemble_disagreement_ig, ucb_ig, posterior_variance_reduction_ig,
+    compute_ig_correlation, select_information_directed,
+)
 from .canonical_runtime import LGAERuntime, UnauthorizedMutationError
 
 __all__ = [
@@ -209,4 +214,11 @@ __all__ = [
     "make_so3_action",
     "make_su2_action",
     "make_gl_action",
+    "InformationGainEstimate",
+    "InformationDirectedReport",
+    "ensemble_disagreement_ig",
+    "ucb_ig",
+    "posterior_variance_reduction_ig",
+    "compute_ig_correlation",
+    "select_information_directed",
 ]
