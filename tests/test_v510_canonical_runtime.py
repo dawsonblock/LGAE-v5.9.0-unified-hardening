@@ -146,7 +146,7 @@ def test_runtime_does_not_mutate_outside_authority():
     # without an engine.
     rt._assert_commit_authority()  # engine is bound -> no raise
     # Forcing the engine to None must trigger the unauthorized-mutation guard.
-    rt.engine = None  # type: ignore[assignment]
+    rt._engine = None  # type: ignore[assignment]
     with pytest.raises(UnauthorizedMutationError):
         rt._assert_commit_authority()
 

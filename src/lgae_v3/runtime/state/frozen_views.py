@@ -94,6 +94,39 @@ class FrozenGraphView:
             "state_hash": self.state_hash(),
         }
 
+    def clone(self) -> GraphBuffers:
+        """Return a detached clone of the underlying graph as a real GraphBuffers.
+
+        This is safe because the clone is a new object — mutating it does not
+        affect authoritative state.
+        """
+        import dataclasses
+        graph = object.__getattribute__(self, "_graph")
+        new = dataclasses.replace(graph)
+        for f in dataclasses.fields(graph):
+            val = getattr(graph, f.name)
+            if isinstance(val, Tensor):
+                setattr(new, f.name, val.detach().clone())
+        return new
+
+    def validate(self) -> None:
+        """Validate the underlying graph. Delegates to the real graph."""
+        object.__getattribute__(self, "_graph").validate()
+
+    def active(self) -> tuple[Tensor, Tensor, Tensor]:
+        """Return (src, dst, weight) for active edges as detached clones."""
+        graph = object.__getattribute__(self, "_graph")
+        s, d, w = graph.active()
+        return s.detach().clone(), d.detach().clone(), w.detach().clone()
+
+    def active_length(self) -> Tensor:
+        """Return active edge lengths as detached clones."""
+        return object.__getattribute__(self, "_graph").active_length().detach().clone()
+
+    def active_roles(self) -> Tensor:
+        """Return active edge roles as detached clones."""
+        return object.__getattribute__(self, "_graph").active_roles().detach().clone()
+
     def __setattr__(self, name: str, value: Any) -> None:
         raise UnauthorizedMutationError(
             f"cannot set attribute '{name}' on FrozenGraphView; "
@@ -129,6 +162,78 @@ class FrozenFiberView:
 
     @property
     def z(self) -> Tensor:
+        return self._get_z()
+
+    @property
+    def latent(self) -> Tensor:
+        """Detached clone of the fiber latent tensor."""
+        fn = object.__getattribute__(self, "_fiber_fn")
+        if hasattr(fn, "latent"):
+            return fn.latent.detach().clone()
+        return self._get_z()
+
+    @property
+    def capacity(self) -> Tensor:
+        """Detached clone of the fiber capacity tensor."""
+        fn = object.__getattribute__(self, "_fiber_fn")
+        if hasattr(fn, "capacity"):
+            return fn.capacity.detach().clone()
+        raise AttributeError("FrozenFiberView has no 'capacity'")
+
+    @property
+    def active_mask(self) -> Tensor:
+        """Detached clone of the active mask tensor."""
+        fn = object.__getattribute__(self, "_fiber_fn")
+        if hasattr(fn, "active_mask"):
+            return fn.active_mask.detach().clone()
+        raise AttributeError("FrozenFiberView has no 'active_mask'")
+
+    @property
+    def dim(self) -> int:
+        """Fiber dimension."""
+        fn = object.__getattribute__(self, "_fiber_fn")
+        if hasattr(fn, "dim"):
+            return int(fn.dim)
+        raise AttributeError("FrozenFiberView has no 'dim'")
+
+    def effective_mask(self) -> Tensor:
+        """Detached clone of the effective mask."""
+        fn = object.__getattribute__(self, "_fiber_fn")
+        if hasattr(fn, "effective_mask"):
+            return fn.effective_mask().detach().clone()
+        raise AttributeError("FrozenFiberView has no 'effective_mask'")
+
+    def snapshot(self) -> Any:
+        """Return a fiber snapshot for shadow evaluation.
+
+        Snapshots are immutable copies of fiber state. They are safe to
+        return because they are used for restore() which creates a new state.
+        """
+        fn = object.__getattribute__(self, "_fiber_fn")
+        if hasattr(fn, "snapshot"):
+            return fn.snapshot()
+        raise AttributeError("FrozenFiberView has no 'snapshot'")
+
+    def state_hash(self) -> str:
+        """Deterministic hash of the fiber state."""
+        fn = object.__getattribute__(self, "_fiber_fn")
+        # fn is the fiber bank (FixedWidthFiberLatent), which is callable
+        # (returns z) and also has state_hash().
+        if hasattr(fn, "state_hash"):
+            return fn.state_hash()
+        # Fallback: hash the tensor deterministically.
+        fibers = fn() if callable(fn) else fn
+        from .state_hashing import state_hash
+        if fibers is not None:
+            return state_hash(fibers)
+        return "none"
+
+    def __call__(self) -> Tensor:
+        """Return a detached clone of the fiber latent z.
+
+        This makes FrozenFiberView callable like the original fiber bank,
+        but returns a safe clone that cannot mutate authoritative state.
+        """
         return self._get_z()
 
     def __setattr__(self, name: str, value: Any) -> None:

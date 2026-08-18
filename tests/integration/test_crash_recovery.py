@@ -171,7 +171,7 @@ class TestReplayRecovery:
 
         # Replay the WAL.
         replay_results = replay_committed_transactions(
-            str(wal_path), fresh_rt.engine,
+            str(wal_path), fresh_rt._engine,
         )
         assert len(replay_results) == 1
         assert replay_results[0]["applied"]
@@ -206,7 +206,7 @@ class TestReplayRecovery:
 
         # Replay — nothing should happen.
         replay_results = replay_committed_transactions(
-            str(wal_path), fresh_rt.engine,
+            str(wal_path), fresh_rt._engine,
         )
         assert len(replay_results) == 0
         assert fresh_rt.authority_hash == hash_before, (
@@ -269,7 +269,7 @@ print(rt.authority_hash)
         torch.manual_seed(42)
         fresh_rt = LGAERuntime(_graph(), _cfg())
         if wal_path.exists():
-            replay_committed_transactions(str(wal_path), fresh_rt.engine)
+            replay_committed_transactions(str(wal_path), fresh_rt._engine)
         assert fresh_rt.authority_hash == final_hash, (
             "Recovery after clean shutdown should match final state! "
             f"Expected: {final_hash[:16]}, Got: {fresh_rt.authority_hash[:16]}"
@@ -290,7 +290,7 @@ print(rt.authority_hash)
         wal_path = tmp_path / "wal.jsonl"
         torch.manual_seed(42)
         fresh_rt = LGAERuntime(_graph(), _cfg())
-        replay_committed_transactions(str(wal_path), fresh_rt.engine)
+        replay_committed_transactions(str(wal_path), fresh_rt._engine)
         assert fresh_rt.authority_hash == initial_hash
 
     def test_recovery_invariant_no_partial_state(self, tmp_path):
@@ -317,7 +317,7 @@ print(rt.authority_hash)
             torch.manual_seed(42)
             fresh_rt = LGAERuntime(_graph(), _cfg())
             initial_hash = fresh_rt.authority_hash
-            replay_committed_transactions(str(wal_path), fresh_rt.engine)
+            replay_committed_transactions(str(wal_path), fresh_rt._engine)
             recovered_hash = fresh_rt.authority_hash
 
             # The recovered hash must be deterministic and valid.
@@ -353,7 +353,7 @@ class TestWALCorruptionDetection:
         torch.manual_seed(42)
         fresh_rt = LGAERuntime(_graph(), _cfg())
         initial_hash = fresh_rt.authority_hash
-        replay_committed_transactions(str(wal_path), fresh_rt.engine)
+        replay_committed_transactions(str(wal_path), fresh_rt._engine)
         assert fresh_rt.authority_hash == initial_hash, (
             "Empty WAL should not change state!"
         )

@@ -105,7 +105,7 @@ class LGAERuntime:
                     "require_persistent_homology must be enabled)"
                 )
 
-        self.engine = engine if engine is not None else LGAEEngine(graph, self.config)
+        self._engine = engine if engine is not None else LGAEEngine(graph, self.config)
         self.executive = executive or StructuralExecutive(self.config)
 
         util = utility_fn or self.runtime_config.utility_fn or _default_utility
@@ -117,7 +117,7 @@ class LGAERuntime:
         self.loop = StructuralLearningLoop(
             config=self.config,
             executive=self.executive,
-            engine=self.engine,
+            engine=self._engine,
             ensemble_size=self.runtime_config.ensemble_size,
             max_candidates=self.runtime_config.max_candidates,
         )
@@ -147,7 +147,7 @@ class LGAERuntime:
         self._step = 0
         self._events: list[RuntimeEvent] = []
         # Generation is the authoritative step counter bound to snapshots.
-        self._generation = int(self.engine.step_index)
+        self._generation = int(self._engine.step_index)
         # Phase execution tracking for v5.11 canonical path verification.
         self._last_phase_order: tuple[str, ...] = ()
 
@@ -169,7 +169,7 @@ class LGAERuntime:
             from .wal import WriteAheadLog
             self._wal = WriteAheadLog(self.runtime_config.wal_path)
         self._commit_channel = CommitChannel(
-            self.engine, self.boundary, component="engine",
+            self._engine, self.boundary, component="engine",
             read_coordinator=self.read_coordinator,
             wal=self._wal,
             require_wal=self.runtime_config.is_production,
@@ -180,12 +180,31 @@ class LGAERuntime:
         self.cache_registry = CacheRegistry(self.commit_event_bus)
 
     # ------------------------------------------------------------------ #
+    # Public API: read-only engine facade (Phase 1)
+    # ------------------------------------------------------------------ #
+
+    @property
+    def engine(self) -> "EngineFacade":
+        """Read-only facade over the internal engine.
+
+        Returns an EngineFacade that exposes read methods but blocks
+        all mutation. Direct engine mutation is physically prevented.
+        """
+        from .state.immutable_views import EngineFacade
+        return EngineFacade(self._engine)
+
+    @property
+    def commit_channel(self) -> CommitChannel:
+        """The sole authoritative mutation channel."""
+        return self._commit_channel
+
+    # ------------------------------------------------------------------ #
     # Authority boundary helpers (Phase 2 foundation)
     # ------------------------------------------------------------------ #
     def _assert_commit_authority(self) -> None:
         """Only the engine may mutate authoritative state. The runtime is an
         orchestrator, not a mutator."""
-        if self.engine is None:
+        if self._engine is None:
             raise UnauthorizedMutationError("no commit authority (engine) is bound")
         self.boundary.assert_can_mutate("engine")
 
@@ -196,7 +215,7 @@ class LGAERuntime:
             raise UnauthorizedMutationError(
                 f"component '{component}' is commit-authority; use the commit channel, not a guard"
             )
-        return AuthoritativeStateGuard(self.engine, self.boundary, component=component)
+        return AuthoritativeStateGuard(self._engine, self.boundary, component=component)
 
     @property
     def commit_channel(self) -> CommitChannel:
@@ -208,11 +227,11 @@ class LGAERuntime:
 
     @property
     def authority_hash(self) -> str:
-        return self.engine.authority_hash()
+        return self._engine.authority_hash()
 
     def snapshot(self) -> RuntimeSnapshot:
         """Capture an immutable authoritative snapshot for readers."""
-        return snapshot_from_engine(self.engine, generation=self._generation)
+        return snapshot_from_engine(self._engine, generation=self._generation)
 
     def consistent_read(self, compute_fn: Callable[[], Any]) -> Any:
         """Run a derived calculation and publish only a generation-consistent
@@ -225,7 +244,7 @@ class LGAERuntime:
         """
         return run_consistent_read(
             self.read_coordinator,
-            generation_getter=lambda: int(self.engine.graph.version),
+            generation_getter=lambda: int(self._engine.graph.version),
             compute_fn=compute_fn,
             max_retries=int(self.runtime_config.max_stale_read_retries),
         )
@@ -268,15 +287,15 @@ class LGAERuntime:
         Runs the executive observe + diagnostics + uncertainty estimation.
         Produces structural deficits that drive candidate generation.
         """
-        graph = self.engine.graph
-        z = self.engine.fibers().detach().clone()
-        audit = self.engine.audit()
+        graph = self._engine.graph
+        z = self._engine.fibers().detach().clone()
+        audit = self._engine.audit()
         exec_obs = self.executive.observe(
             graph, z, audit,
             task_loss=observation.task_loss,
             task_loss_delta=observation.task_loss_delta,
             epistemic_uncertainty=observation.epistemic_uncertainty,
-            fiber_state=self.engine.fibers,
+            fiber_state=self._engine.fibers,
         )
         # Uncertainty estimation.
         obs_vec = exec_obs.to_vector()
@@ -414,8 +433,8 @@ class LGAERuntime:
         if self._mpc is not None and chosen != StructuralAction.NO_OP:
             planner_name = "mpc"
             horizon = int(self.runtime_config.mpc_horizon)
-            graph = self.engine.graph
-            z = self.engine.fibers().detach().clone()
+            graph = self._engine.graph
+            z = self._engine.fibers().detach().clone()
             try:
                 plan_result = self._mpc.plan(graph, z, seed=int(self.config.seed) + self._step)
                 horizon = int(plan_result.horizon)
@@ -471,8 +490,8 @@ class LGAERuntime:
             return result
         # Select target for the chosen action.
         target = self.executive.select_target(
-            chosen_action, self.engine.graph, self.engine.fibers().detach(),
-            fiber_state=self.engine.fibers,
+            chosen_action, self._engine.graph, self._engine.fibers().detach(),
+            fiber_state=self._engine.fibers,
         )
         self._target = target
         # Build the mutation object from the chosen action + target.
@@ -492,12 +511,12 @@ class LGAERuntime:
             self._transaction = None
             return result
         # Shadow-only evaluation via the governor (no authoritative mutation).
-        base_hash = self.engine.graph.state_hash()
-        base_version = int(self.engine.graph.version)
-        mut_result, shadow_graph = self.engine.governor.evaluate_mutation(
-            self.engine.graph, self.engine.fibers().detach(), mutation,
+        base_hash = self._engine.graph.state_hash()
+        base_version = int(self._engine.graph.version)
+        mut_result, shadow_graph = self._engine.governor.evaluate_mutation(
+            self._engine.graph, self._engine.fibers().detach(), mutation,
             seed=int(self.config.seed) + self._step,
-            gauge_bank=self.engine.gauge_connections,
+            gauge_bank=self._engine.gauge_connections,
         )
         cert = None
         if isinstance(mut_result, MutationResult) and mut_result.metadata:
@@ -640,7 +659,7 @@ class LGAERuntime:
                     state_hash=observation.state_hash,
                     committed=False,
                 )
-            after_hash = self.engine.authority_hash()
+            after_hash = self._engine.authority_hash()
             # Immutable evidence record.
             evidence = self.evidence_ledger.append(EvidenceRecord(
                 record_type="runtime_mutation_commit",
@@ -667,8 +686,8 @@ class LGAERuntime:
                 authority_state_hash_before=before_hash,
                 authority_state_hash_after=after_hash,
                 gauge_authority_hash=(
-                    None if self.engine.gauge_connections is None
-                    else self.engine.gauge_connections.state_hash()
+                    None if self._engine.gauge_connections is None
+                    else self._engine.gauge_connections.state_hash()
                 ),
                 signing_key=self._signing_key,
             )
@@ -679,7 +698,7 @@ class LGAERuntime:
             # Cache invalidation via commit event bus.
             impact = _impact_for_action(self._chosen_action)
             self.commit_event_bus.publish(GraphCommitEvent(
-                generation=int(self.engine.graph.version),
+                generation=int(self._engine.graph.version),
                 changes=impact.to_change_kind(),
                 reason="runtime_commit",
             ))
@@ -690,7 +709,7 @@ class LGAERuntime:
                 "transaction_id": transaction.transaction_id,
             })
             self._emit(RuntimePhase.CACHE_INVALIDATE, {
-                "graph_version": int(self.engine.graph.version),
+                "graph_version": int(self._engine.graph.version),
                 "invalidated": self.cache_registry.invalidations[-1]["invalidated"] if self.cache_registry.invalidations else [],
                 "spared": self.cache_registry.invalidations[-1]["spared"] if self.cache_registry.invalidations else [],
             })
@@ -699,7 +718,7 @@ class LGAERuntime:
                 state_version=observation.state_version,
                 state_hash=observation.state_hash,
                 committed=True,
-                new_state_version=int(self.engine.graph.version),
+                new_state_version=int(self._engine.graph.version),
                 new_state_hash=after_hash,
                 transaction_id=transaction.transaction_id,
                 receipt_hash=receipt_hash,
@@ -728,8 +747,8 @@ class LGAERuntime:
         authorized actions, not just from governance rejections.
         """
         # Update credit tracker with current utility.
-        graph = self.engine.graph
-        z = self.engine.fibers().detach().clone()
+        graph = self._engine.graph
+        z = self._engine.fibers().detach().clone()
         u_now = float(self.utility_fn(graph, z))
         self.loop.credit_tracker.record_utility(self._step, u_now)
         # Compute the realized delta utility from the commit.
@@ -864,12 +883,12 @@ class LGAERuntime:
         self._last_phase_order = tuple(phases_called)
 
         snap_after = self.snapshot()
-        self._generation = int(self.engine.step_index)
+        self._generation = int(self._engine.step_index)
         self._step += 1
 
         # Compute utility delta for backward-compatible result.
         u_before = float(self.utility_fn(
-            self.engine.graph, self.engine.fibers().detach().clone(),
+            self._engine.graph, self._engine.fibers().detach().clone(),
         ))
         delta_u = float(commit_result.delta_utility) if commit_result.committed else 0.0
 
