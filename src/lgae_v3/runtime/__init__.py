@@ -74,6 +74,7 @@ from .merkle_evidence import MerkleProof, MerkleTree, BatchEvidence, verify_proo
 from .checkpointing import Checkpoint, CheckpointChain
 from .wal import (
     WALRecordType, WALRecord, WALTransaction, WriteAheadLog, recover_transactions,
+    replay_committed_transactions,
 )
 from .replayable_decisions import (
     DecisionRecord, DecisionLedger, build_decision_record, verify_replay,
@@ -248,6 +249,7 @@ __all__ = [
     "WALTransaction",
     "WriteAheadLog",
     "recover_transactions",
+    "replay_committed_transactions",
     "DecisionRecord",
     "DecisionLedger",
     "build_decision_record",

@@ -323,16 +323,30 @@ class CommitChannel:
         # All validations passed. Apply the transaction atomically.
         def _apply() -> CommitResult:
             # WAL: write BEGIN + WRITE records before applying.
+            # The WRITE record contains the full transaction state so
+            # recovery can re-apply it after a crash.
             wal_txn_id = None
             if self._wal is not None:
                 wal_txn_id = self._wal.begin({
                     "transaction_id": transaction.transaction_id,
                     "base_state_hash": transaction.base_state_hash,
+                    "base_state_version": transaction.base_state_version,
                 })
                 if transaction.graph_delta is not None:
+                    # Serialize the shadow graph for recovery.
+                    # Convert tensors to lists for JSON serialization.
+                    sg = transaction.graph_delta.shadow_graph
+                    sd = sg.to_state_dict()
+                    json_state = {}
+                    for k, v in sd.items():
+                        if hasattr(v, "tolist"):
+                            json_state[k] = v.tolist()
+                        else:
+                            json_state[k] = v
                     self._wal.write(wal_txn_id, {
                         "kind": "graph",
-                        "shadow_graph_hash": transaction.graph_delta.shadow_graph.state_hash(),
+                        "shadow_graph_hash": sg.state_hash(),
+                        "shadow_graph_state": json_state,
                         "mutation_name": transaction.graph_delta.mutation_name,
                     })
 

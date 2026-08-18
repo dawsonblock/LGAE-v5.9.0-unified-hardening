@@ -185,6 +185,10 @@ def recover_transactions(records: list[WALRecord]) -> dict[int, list[dict[str, A
 
     Returns a dict of {txn_id: [mutations]} for committed transactions only.
     Transactions without a COMMIT record are discarded (rollback).
+
+    This is the core crash-recovery invariant:
+        S_restart ∈ { S_n, S_{n+1} }
+    Never S_n + partial(Δ).
     """
     txns: dict[int, list[dict[str, Any]]] = {}
     committed: set[int] = set()
@@ -205,3 +209,47 @@ def recover_transactions(records: list[WALRecord]) -> dict[int, list[dict[str, A
         for txn_id, mutations in txns.items()
         if txn_id in committed and txn_id not in aborted
     }
+
+
+def replay_committed_transactions(
+    wal_path: str | Path,
+    engine: Any,
+) -> list[dict[str, Any]]:
+    """Replay committed WAL transactions onto an engine.
+
+    This is the crash-recovery procedure. It:
+    1. Reads all WAL records.
+    2. Identifies committed transactions (have COMMIT, no ABORT).
+    3. Re-applies each committed transaction's graph delta to the engine.
+    4. Returns a list of replay results.
+
+    Transactions without a COMMIT record are silently discarded —
+    they represent in-flight work that was interrupted by a crash.
+
+    The central recovery invariant:
+        S_restart ∈ { S_n, S_{n+1} }
+    Never S_n + partial(Δ).
+    """
+    from ..types import GraphBuffers
+
+    wal = WriteAheadLog(wal_path)
+    records = list(wal.iter_records())
+    committed = recover_transactions(records)
+
+    results: list[dict[str, Any]] = []
+    for txn_id, mutations in committed.items():
+        for mutation in mutations:
+            if mutation.get("kind") == "graph":
+                state = mutation.get("shadow_graph_state")
+                if state is not None:
+                    shadow = GraphBuffers.from_state_dict(state)
+                    engine.graph = shadow
+                    if hasattr(engine, "_invalidate_neighbor_indices"):
+                        engine._invalidate_neighbor_indices("wal_recovery")
+                    results.append({
+                        "txn_id": txn_id,
+                        "kind": "graph",
+                        "applied": True,
+                        "new_hash": engine.authority_hash(),
+                    })
+    return results
