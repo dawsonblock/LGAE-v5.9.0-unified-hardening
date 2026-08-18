@@ -228,6 +228,22 @@ class CommitChannel:
         self._capability = capability
         self._commit_count = 0
         self._last_transaction_id: str | None = None
+        # v5.11-RC Phase 11: Internal commit failpoints for crash testing.
+        # When set, _check_failpoint() will raise at the named point.
+        self._failpoint: str | None = None
+
+    def set_failpoint(self, name: str | None) -> None:
+        """Set a failpoint for crash testing.
+
+        When set, the commit will raise RuntimeError at the named point.
+        Set to None to disable.
+        """
+        self._failpoint = name
+
+    def _check_failpoint(self, name: str) -> None:
+        """Check if a failpoint is active and raise if it matches."""
+        if self._failpoint == name:
+            raise RuntimeError(f"failpoint: {name}")
 
     def _bracket(self, fn: Callable[[], Any]) -> Any:
         if self._read_coordinator is None:
@@ -378,6 +394,9 @@ class CommitChannel:
             pre_hash = self._engine.authority_hash()
             pre_version = int(self._engine.graph.version)
 
+            # v5.11-RC Phase 11: Failpoint before WAL BEGIN.
+            self._check_failpoint("before_prepare")
+
             # WAL: write BEGIN + WRITE + COMMIT records before applying.
             wal_txn_id = None
             try:
@@ -426,6 +445,9 @@ class CommitChannel:
                         })
                     self._wal.commit(wal_txn_id)
 
+                # v5.11-RC Phase 11: Failpoint after WAL COMMIT.
+                self._check_failpoint("after_wal_commit")
+
                 # v5.11-RC Phase 4: Build the complete candidate state bundle.
                 # Clone the current graph, fibers, and gauges, then apply
                 # all deltas to the clones. This ensures that live state is
@@ -470,6 +492,9 @@ class CommitChannel:
                     raise ValueError("candidate graph is None")
                 _ = new_graph.state_hash()
 
+                # v5.11-RC Phase 11: Failpoint before state swap.
+                self._check_failpoint("before_state_swap")
+
                 # v5.11-RC Phase 4: Single atomic swap.
                 # All state changes are applied in one operation. If any
                 # part fails, the pre-state is preserved.
@@ -487,6 +512,9 @@ class CommitChannel:
 
                 after_hash = self._engine.authority_hash()
                 after_version = int(self._engine.graph.version)
+
+                # v5.11-RC Phase 11: Failpoint after state swap.
+                self._check_failpoint("after_state_swap")
 
             except BaseException:
                 # v5.11-RC Phase 4: Rollback on any exception.
