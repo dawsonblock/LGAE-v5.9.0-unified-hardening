@@ -50,6 +50,10 @@ from .performance_qualification import (
     ScaleTier, TIER_NODE_COUNTS, MeasurementStatus, TierMeasurement,
     PerformanceQualificationReport, measure_tier, run_performance_qualification,
 )
+from .promotion import (
+    PromotionLevel, GateStatus, PromotionReport,
+    PromotionGateError, evaluate_promotion, assert_promotion,
+)
 from .canonical_runtime import LGAERuntime, UnauthorizedMutationError
 
 __all__ = [
@@ -114,4 +118,10 @@ __all__ = [
     "PerformanceQualificationReport",
     "measure_tier",
     "run_performance_qualification",
+    "PromotionLevel",
+    "GateStatus",
+    "PromotionReport",
+    "PromotionGateError",
+    "evaluate_promotion",
+    "assert_promotion",
 ]
