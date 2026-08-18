@@ -38,6 +38,10 @@ from .baseline_competition import (
 from .observability import (
     MetricsSink, Counter, Gauge, Histogram, read_jsonl,
 )
+from .qualification import (
+    SafetyCheckStatus, SafetyCheckResult, SafetyQualificationReport,
+    SafetyGateError, run_safety_qualification, assert_safety_gate,
+)
 from .canonical_runtime import LGAERuntime, UnauthorizedMutationError
 
 __all__ = [
@@ -85,4 +89,10 @@ __all__ = [
     "Gauge",
     "Histogram",
     "read_jsonl",
+    "SafetyCheckStatus",
+    "SafetyCheckResult",
+    "SafetyQualificationReport",
+    "SafetyGateError",
+    "run_safety_qualification",
+    "assert_safety_gate",
 ]
