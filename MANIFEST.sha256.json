@@ -5,7 +5,7 @@
     ".gitignore",
     "MANIFEST.sha256.json"
   ],
-  "file_count": 543,
+  "file_count": 547,
   "files": [
     {
       "path": ".github/workflows/ci.yml",
@@ -96,6 +96,11 @@
       "path": ".hypothesis/constants/1685f6bbd4e45406",
       "bytes": 449,
       "sha256": "b553c9fecc5b2557f670983be25718a669e3aa0522dce1feb4557c329a3fc40a"
+    },
+    {
+      "path": ".hypothesis/constants/175bb8fba1cef0c2",
+      "bytes": 1591,
+      "sha256": "ea2f90f6605a73c773ac40c58b9941b87b3399654a4692db5bf180364d461eb8"
     },
     {
       "path": ".hypothesis/constants/1a3e4b17f488d0ed",
@@ -523,6 +528,11 @@
       "sha256": "a9795b34b8a79b3eb7401432399bccf07c8a7940a26c98476e4cead179585bd2"
     },
     {
+      "path": ".hypothesis/constants/742e3a89bff39017",
+      "bytes": 866,
+      "sha256": "3c29f5736e6f7f4d7c91726e9d966c331d25508aa985c78aa2bfd04ea4e331e5"
+    },
+    {
       "path": ".hypothesis/constants/75faa6d8372c5951",
       "bytes": 285,
       "sha256": "92ef0187397b2e3086642ce318ba779891ea1528dad78d6a810bb8fa883f66a2"
@@ -848,6 +858,11 @@
       "sha256": "bcbb4334ffa8fdf8ea57ac8ad37603797e70103484117f09b94f6d2e4491dcd7"
     },
     {
+      "path": ".hypothesis/constants/cb2b241a90cddf4c",
+      "bytes": 541,
+      "sha256": "fd9b898b5ea5198241440fa37cca6cf7d26f2d4c6973a077b07dfb5221b224a8"
+    },
+    {
       "path": ".hypothesis/constants/cd5da52a32d5afc2",
       "bytes": 141,
       "sha256": "dcde56fbc22ebd6f3b299723d3ce91e0070a0785c4da917ceb89715fa2880fea"
@@ -1065,12 +1080,12 @@
     {
       "path": ".hypothesis/unicode_data/15.0.0/codec-utf-8.json.gz",
       "bytes": 60,
-      "sha256": "f61a7ba5412ede799aaf3554faa55356495e41c02858b232d67a4a1ced285d9e"
+      "sha256": "69120fe4b39692e0eb97240e9c095565ec05d6479227914a51986833814c2ae7"
     },
     {
       "path": "BUILD_REPORT.md",
-      "bytes": 3915,
-      "sha256": "fba6fb230fa5cec3becf9314710373cbd04de23dd722b8677610013d96473f9e"
+      "bytes": 4027,
+      "sha256": "b5dc4b8087b8775e063508ab1a8ebda912e539e62d3c2843560429d00199a5c9"
     },
     {
       "path": "CHANGELOG.md",
@@ -1310,7 +1325,7 @@
     {
       "path": "release_verification.json",
       "bytes": 1151,
-      "sha256": "075585afb4eb0ae41488fdb72d1fe2d30cb0652fbc67c47eed4fc51f4a5ae6ba"
+      "sha256": "7d040805ae477ffaa92390cc3b92e5838b90a1d431106a280f3255145bd397e8"
     },
     {
       "path": "requirements-verified.txt",
@@ -1724,8 +1739,8 @@
     },
     {
       "path": "src/lgae_v3/runtime/authority.py",
-      "bytes": 22002,
-      "sha256": "b7a85d9a4e584fcaaf42ebf45b4477213215ab598d10f9c2f002b48ed74e54a2"
+      "bytes": 22882,
+      "sha256": "3d36fe3193c4136acbd59ed3e5f4a72eb566365a279e0a52ade86a676b16d2c4"
     },
     {
       "path": "src/lgae_v3/runtime/baseline_competition.py",
@@ -1754,8 +1769,8 @@
     },
     {
       "path": "src/lgae_v3/runtime/canonical_runtime.py",
-      "bytes": 49730,
-      "sha256": "4f43a5482dac4f0c048e53c82f705e3e9771b6b8832601d527fe83b13a0f7176"
+      "bytes": 49752,
+      "sha256": "2775083acdd1d6ddd8a257e0ad7e237c8a0165718c38cc04a36a333d074efb87"
     },
     {
       "path": "src/lgae_v3/runtime/causal_credit.py",
@@ -2039,8 +2054,8 @@
     },
     {
       "path": "src/lgae_v3/runtime/wal.py",
-      "bytes": 12090,
-      "sha256": "5ebae6c2bda6b182cbe20c5dac2b2a3545aee32c0e0e096f7257b10bac806f30"
+      "bytes": 12327,
+      "sha256": "d878365ad9ec1fd8676ec1676d65611e443345e29962fa7989febcd8f64f3036"
     },
     {
       "path": "src/lgae_v3/sheaf_diffusion.py",
@@ -2148,6 +2163,11 @@
       "sha256": "cef1febc5fc270b7082597cfeda672b8b6fabac4b96a5f58dcfa1f5176e5ac04"
     },
     {
+      "path": "tests/integration/test_crash_matrix.py",
+      "bytes": 12310,
+      "sha256": "4fed2bbdd12ac9cdafe3516759b2f4d398200531b2298351bb35d374a11d8a5c"
+    },
+    {
       "path": "tests/integration/test_crash_recovery.py",
       "bytes": 14281,
       "sha256": "60e582e8c55a1e9962f9cd400614f43f804b996d3021a037d1e7a472b47b915c"
@@ -2194,8 +2214,8 @@
     },
     {
       "path": "tests/integration/test_wal_redesign.py",
-      "bytes": 13747,
-      "sha256": "c3a5f740218222f25894aa7aafeb5281439acb6428b96ffc9c7c8e8cc84706fe"
+      "bytes": 14645,
+      "sha256": "4551e52882cacbeb8e159c20621b98ed11e9ec3b777afb34ddf1fdaff5875782"
     },
     {
       "path": "tests/test_authority_persistence.py",
@@ -2469,8 +2489,8 @@
     },
     {
       "path": "tests/test_v510_manifest_regression.py",
-      "bytes": 1889,
-      "sha256": "400c3d476b626791a43c4b8aaa95fa0bf0fcda0f2b88acee84382d9dec4edc4b"
+      "bytes": 2826,
+      "sha256": "0a0ecbba032602cb32de149ea58a4488d866fce9bc49a6c49320fce7fba1ff9c"
     },
     {
       "path": "tests/test_v510_manifold_action.py",

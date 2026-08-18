@@ -341,6 +341,10 @@ class CommitChannel:
 
         # All validations passed. Apply the transaction atomically.
         # v5.11 Phase 7: Exception-atomic commit with rollback.
+        # v5.11 Sprint 2 D11-005: WAL ordering is BEGIN → WRITE → COMMIT → APPLY.
+        # The COMMIT record is written BEFORE live mutation, so a crash
+        # during apply leaves a durable commit record that replay can
+        # reconstruct. This guarantees S_restart ∈ {S_t, S_{t+1}}.
         def _apply() -> CommitResult:
             # v5.11 Phase 7: Capture complete pre-state for rollback.
             pre_graph = self._engine.graph
@@ -350,7 +354,11 @@ class CommitChannel:
                 pre_gauge_raw = self._engine.gauge_connections.raw_generators.detach().clone()
             pre_hash = self._engine.authority_hash()
 
-            # WAL: write BEGIN + WRITE records before applying.
+            # WAL: write BEGIN + WRITE + COMMIT records before applying.
+            # This is the critical D11-005 fix: the COMMIT record must be
+            # durable BEFORE live state is mutated. If a crash happens
+            # during apply, replay will reconstruct the post-transaction
+            # state from the committed WAL records.
             wal_txn_id = None
             try:
                 if self._wal is not None:
@@ -399,6 +407,13 @@ class CommitChannel:
                             "gauge_raw": raw.detach().cpu().tolist(),
                             "action": transaction.gauge_delta.action,
                         })
+                    # v5.11 Sprint 2 D11-005: Write COMMIT BEFORE applying
+                    # live state. This ensures that if a crash happens
+                    # during apply, the WAL has a durable commit record
+                    # and replay can reconstruct the post-transaction state.
+                    # If apply fails with a non-crash exception, we write
+                    # ABORT during rollback to invalidate the COMMIT.
+                    self._wal.commit(wal_txn_id)
 
                 # Apply graph delta.
                 if transaction.graph_delta is not None:
@@ -435,10 +450,6 @@ class CommitChannel:
                 # Verify post-state hash if expected.
                 after_hash = self._engine.authority_hash()
                 after_version = int(self._engine.graph.version)
-
-                # WAL: write COMMIT record after successful apply.
-                if self._wal is not None and wal_txn_id is not None:
-                    self._wal.commit(wal_txn_id)
 
             except BaseException:
                 # v5.11 Phase 7: Rollback to pre-state on any exception.

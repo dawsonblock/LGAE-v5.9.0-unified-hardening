@@ -155,6 +155,8 @@ class LGAERuntime:
         self._generation = int(self._engine.step_index)
         # Phase execution tracking for v5.11 canonical path verification.
         self._last_phase_order: tuple[str, ...] = ()
+        # v5.11 Sprint 3 D11-011: Utility before commit, for realized delta.
+        self._u_before_commit: float = 0.0
 
         # Strict authority boundaries (Phase 2). The engine is the sole commit
         # authority; proposal/verification components receive read-only guards.
@@ -222,10 +224,6 @@ class LGAERuntime:
                 f"component '{component}' is commit-authority; use the commit channel, not a guard"
             )
         return AuthoritativeStateGuard(self._engine, self.boundary, component=component)
-
-    @property
-    def commit_channel(self) -> CommitChannel:
-        return self._commit_channel
 
     @property
     def generation(self) -> int:

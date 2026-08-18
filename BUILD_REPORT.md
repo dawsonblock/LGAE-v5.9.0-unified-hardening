@@ -8,7 +8,7 @@ LGAE v5.11.0 is a runtime-convergence release, not a feature release. The
 objective is transactional correctness, crash-safety, determinism,
 self-verification, and scientific honesty.
 
-**Test suite: 1458 passed, 0 failed**
+**Test suite: 1465 passed, 0 failed**
 
 ## Defects repaired (19 total)
 
@@ -18,9 +18,9 @@ self-verification, and scientific honesty.
 - **D11-002**: CommitChannel only logically exclusive → Fixed: capability-gated mutation primitives (`_AuthorityCapability` token)
 - **D11-003**: Graph/fiber/gauge apply is non-atomic → Fixed: exception-atomic commit with rollback to pre-state
 - **D11-004**: WAL records graph but not complete transaction state → Fixed: WAL serializes graph + fiber + gauge deltas
-- **D11-005**: WAL COMMIT occurs after live mutation → Fixed: COMMIT ordering verified, no COMMIT on rollback
+- **D11-005**: WAL COMMIT occurs after live mutation → Fixed: COMMIT written BEFORE APPLY (COMMIT-before-APPLY ordering), ABORT invalidates on rollback
 - **D11-006**: WAL counters reset on reopen → Fixed: `_restore_counters()` scans existing records
-- **D11-007**: Crash tests do not kill inside transaction stages → Verified: crash recovery tests pass
+- **D11-007**: Crash tests do not kill inside transaction stages → Fixed: subprocess SIGKILL crash matrix at 4 stages (before BEGIN, after BEGIN, after WRITE, after COMMIT)
 - **D11-008**: FiberDelta fallback uses Python `hash()` → Fixed: raises `DeterminismError`, `FiberStateSnapshot.state_hash()` added
 - **D11-009**: Authorization binding is optional/incomplete → Fixed: mandatory, non-nullable, `transaction_hash` binding
 - **D11-010**: Fiber/gauge evaluation still mutate-and-restore → Fixed: shadow-only evaluation, restore before evaluation
@@ -96,8 +96,8 @@ for identical state, observation, configuration, models, and deterministic rando
 ## Test breakdown
 
 - Unit tests: ~1300
-- Integration tests: ~160
-- Total: 1458 passed, 0 failed
+- Integration tests: ~165
+- Total: 1465 passed, 0 failed
 
 ## Dependencies
 

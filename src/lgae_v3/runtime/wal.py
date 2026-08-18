@@ -174,17 +174,22 @@ class WriteAheadLog:
         return record
 
     def abort(self, txn_id: int) -> WALRecord:
-        """Abort a transaction (rollback)."""
-        if txn_id not in self._active_txns:
-            raise ValueError(f"txn {txn_id} is not active")
+        """Abort a transaction (rollback).
+
+        v5.11 Sprint 2 D11-005: With COMMIT-before-APPLY ordering,
+        a COMMIT may have already been written. In that case, we still
+        write an ABORT record to invalidate it. The recover_transactions
+        function excludes transactions that have both COMMIT and ABORT.
+        """
         self._lsn += 1
         record = WALRecord(
             txn_id=txn_id, record_type=WALRecordType.ABORT, lsn=self._lsn,
             payload={}, timestamp=time.time(),
         )
         self._append(record)
-        self._active_txns[txn_id].aborted = True
-        del self._active_txns[txn_id]
+        if txn_id in self._active_txns:
+            self._active_txns[txn_id].aborted = True
+            del self._active_txns[txn_id]
         return record
 
     def checkpoint(self) -> WALRecord:

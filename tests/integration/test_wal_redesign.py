@@ -306,10 +306,18 @@ class TestWALCommitOrdering:
             status=AuthorizationStatus.AUTHORIZED,
             transaction_hash="test_txn_rollback",
         )
-        # Make fiber restore fail to trigger rollback.
+        # v5.11 Sprint 2 D11-005: Make apply fail in a way that doesn't
+        # break rollback. We inject a failure into the fiber restore
+        # ONLY during apply, then restore the original for rollback.
+        # The trick: we use a flag to fail only the first call.
         original_restore = rt._engine.fibers.restore
+        call_count = [0]
         def failing_restore(snap):
-            raise RuntimeError("injected failure")
+            call_count[0] += 1
+            if call_count[0] == 1:
+                raise RuntimeError("injected apply failure")
+            # Subsequent calls (rollback) use the original.
+            return original_restore(snap)
         rt._engine.fibers.restore = failing_restore
         try:
             with pytest.raises(Exception):
@@ -317,11 +325,20 @@ class TestWALCommitOrdering:
         finally:
             rt._engine.fibers.restore = original_restore
 
-        # Verify no COMMIT record was written.
+        # v5.11 Sprint 2 D11-005: With COMMIT-before-APPLY ordering,
+        # a COMMIT record IS written before apply, but if apply fails,
+        # an ABORT record is written to invalidate it.
+        # The key invariant is: the transaction is NOT recoverable as
+        # committed (recover_transactions excludes aborted txns).
         wal = WriteAheadLog(wal_path)
         records = list(wal.iter_records())
-        commit_records = [r for r in records if r.record_type == WALRecordType.COMMIT]
-        assert len(commit_records) == 0, "COMMIT record written despite rollback!"
-        # ABORT or no record should exist (rollback discards the transaction).
-        # The key invariant is: no COMMIT record.
-        # ABORT may or may not be written depending on where the exception occurred.
+        from lgae_v3.runtime.wal import recover_transactions
+        recovered = recover_transactions(records)
+        # The rolled-back transaction must NOT be in recovered transactions.
+        assert len(recovered) == 0, (
+            f"Rolled-back transaction was recovered as committed! "
+            f"Recovered: {list(recovered.keys())}"
+        )
+        # An ABORT record must exist to invalidate the COMMIT.
+        abort_records = [r for r in records if r.record_type == WALRecordType.ABORT]
+        assert len(abort_records) > 0, "No ABORT record after rollback!"
