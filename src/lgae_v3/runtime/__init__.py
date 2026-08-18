@@ -64,6 +64,7 @@ from .curriculum import (
 from .ood_qualification import (
     OODEvaluationResult, OODQualificationReport, evaluate_ood, to_scientific_report,
 )
+from .mode_enforcement import ModeEnforcer, ProductionModeViolation
 from .canonical_runtime import LGAERuntime, UnauthorizedMutationError
 
 __all__ = [
@@ -147,4 +148,6 @@ __all__ = [
     "OODQualificationReport",
     "evaluate_ood",
     "to_scientific_report",
+    "ModeEnforcer",
+    "ProductionModeViolation",
 ]
