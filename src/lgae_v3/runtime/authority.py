@@ -112,27 +112,40 @@ class AuthoritativeStateGuard:
     exposes frozen (immutable) views of graph/fiber/gauge state; any attempt
     to mutate through the guard raises ``UnauthorizedMutationError``.
 
-    v5.11 Phase 3: graph/fibers/gauges now return frozen views that clone
-    tensors defensively. The raw engine is never exposed.
+    v5.11-RC Phase 1: The raw engine is stored via object.__setattr__
+    and accessed via object.__getattribute__ internally. External
+    attribute access to '_engine' is blocked by __getattribute__.
+    This closes the guard._engine escape hatch.
     """
 
+    __slots__ = ("_engine", "_boundary", "_component")
+
     def __init__(self, engine: Any, boundary: AuthorityBoundary, *, component: str) -> None:
-        self._engine = engine
-        self._boundary = boundary
-        self._component = str(component)
-        # OBSERVATION/PROPOSAL/VERIFICATION are read-only w.r.t. authority.
-        # COMMIT is granted through a separate CommitChannel.
+        object.__setattr__(self, "_engine", engine)
+        object.__setattr__(self, "_boundary", boundary)
+        object.__setattr__(self, "_component", str(component))
+
+    def __getattribute__(self, name: str) -> Any:
+        # Block external access to the raw engine reference.
+        if name == "_engine":
+            raise UnauthorizedMutationError(
+                "access to raw engine via _engine is blocked; "
+                "authoritative state is accessed only through the commit channel"
+            )
+        return object.__getattribute__(self, name)
 
     @property
     def component(self) -> str:
-        return self._component
+        return object.__getattribute__(self, "_component")
 
     @property
     def role(self) -> AuthorityRole:
-        return self._boundary.role_of(self._component)
+        return object.__getattribute__(self, "_boundary").role_of(
+            object.__getattribute__(self, "_component")
+        )
 
     def snapshot(self) -> RuntimeSnapshot:
-        return snapshot_from_engine(self._engine)
+        return snapshot_from_engine(object.__getattribute__(self, "_engine"))
 
     @property
     def graph(self) -> FrozenGraphView:
@@ -143,33 +156,35 @@ class AuthoritativeStateGuard:
         ``UnauthorizedMutationError``.
         """
         from .state.frozen_views import FrozenGraphView
-        return FrozenGraphView(self._engine.graph)
+        return FrozenGraphView(object.__getattribute__(self, "_engine").graph)
 
     @property
     def fibers(self) -> FrozenFiberView:
         """Frozen (immutable) fiber view."""
         from .state.frozen_views import FrozenFiberView
-        return FrozenFiberView(self._engine.fibers)
+        return FrozenFiberView(object.__getattribute__(self, "_engine").fibers)
 
     @property
     def gauge_connections(self) -> FrozenGaugeView:
         """Frozen (immutable) gauge view."""
         from .state.frozen_views import FrozenGaugeView
-        return FrozenGaugeView(getattr(self._engine, "gauge_connections", None))
+        return FrozenGaugeView(getattr(
+            object.__getattribute__(self, "_engine"), "gauge_connections", None
+        ))
 
     def authority_hash(self) -> str:
-        return self._engine.authority_hash()
+        return object.__getattribute__(self, "_engine").authority_hash()
 
     def __setattr__(self, name: str, value: Any) -> None:
-        # Block accidental mutation of the guard's engine reference from
-        # outside. Internal fields are prefixed with underscore.
-        if name.startswith("_") or name in {"component"}:
-            super().__setattr__(name, value)
-        else:
-            raise UnauthorizedMutationError(
-                f"cannot set attribute '{name}' on AuthoritativeStateGuard; "
-                "authoritative state is mutated only through the commit channel"
-            )
+        raise UnauthorizedMutationError(
+            f"cannot set attribute '{name}' on AuthoritativeStateGuard; "
+            "authoritative state is mutated only through the commit channel"
+        )
+
+    def __delattr__(self, name: str) -> None:
+        raise UnauthorizedMutationError(
+            f"cannot delete attribute '{name}' on AuthoritativeStateGuard"
+        )
 
 
 class CommitChannel:

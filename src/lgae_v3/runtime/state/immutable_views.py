@@ -31,12 +31,27 @@ class EngineFacade:
 
     This is what runtime.engine returns. It exposes read methods
     but blocks all mutation. The actual engine is private.
+
+    v5.11-RC Phase 1: The raw engine is stored via object.__setattr__
+    and accessed via object.__getattribute__ internally. External
+    attribute access to '_engine' is blocked by __getattribute__.
+    This closes the facade._engine escape hatch.
     """
 
     __slots__ = ("_engine",)
 
     def __init__(self, engine: Any) -> None:
         object.__setattr__(self, "_engine", engine)
+
+    def __getattribute__(self, name: str) -> Any:
+        # Block external access to the raw engine reference.
+        # Internal methods use object.__getattribute__ to bypass this.
+        if name == "_engine":
+            raise UnauthorizedMutationError(
+                "access to raw engine via _engine is blocked; "
+                "authoritative state is accessed only through the commit channel"
+            )
+        return object.__getattribute__(self, name)
 
     @property
     def graph(self) -> FrozenGraphView:
