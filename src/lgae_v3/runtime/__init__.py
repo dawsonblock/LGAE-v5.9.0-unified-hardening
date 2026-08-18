@@ -69,6 +69,7 @@ from .adversarial import (
     AdversarialOutcome, AdversarialTestResult, AdversarialTestReport,
     run_adversarial_tests,
 )
+from .profiling import PhaseTiming, ProfileReport, RuntimeProfiler
 from .canonical_runtime import LGAERuntime, UnauthorizedMutationError
 
 __all__ = [
@@ -158,4 +159,7 @@ __all__ = [
     "AdversarialTestResult",
     "AdversarialTestReport",
     "run_adversarial_tests",
+    "PhaseTiming",
+    "ProfileReport",
+    "RuntimeProfiler",
 ]
