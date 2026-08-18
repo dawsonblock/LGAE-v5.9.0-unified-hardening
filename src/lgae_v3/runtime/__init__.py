@@ -82,6 +82,7 @@ from .real_graphs import (
     RealGraphBenchmark, RealGraphSpec, BENCHMARK_SPECS,
     load_benchmark, list_benchmarks,
 )
+from .sheaf import SheafConsistencyResult, certify_sheaf_consistency
 from .canonical_runtime import LGAERuntime, UnauthorizedMutationError
 
 __all__ = [
@@ -194,4 +195,6 @@ __all__ = [
     "BENCHMARK_SPECS",
     "load_benchmark",
     "list_benchmarks",
+    "SheafConsistencyResult",
+    "certify_sheaf_consistency",
 ]
