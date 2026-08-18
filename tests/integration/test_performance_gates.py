@@ -138,13 +138,12 @@ class TestPerformanceGates:
         assert report.measurements[0].status == MeasurementStatus.SKIPPED
 
     def test_unmeasured_tier_not_inferred(self):
-        """An unmeasured tier is NOT_MEASURED, not inferred."""
+        """An unmeasured tier is INVALID, not inferred."""
         measurement = measure_tier(
             ScaleTier.L, proposal_fn=None, diagnostic_fn=None, commit_fn=None,
         )
-        # With no functions, the measurement is still MEASURED but with
-        # zero latencies. The key is that it's not inferred from smaller tiers.
-        assert measurement.status == MeasurementStatus.MEASURED
+        # v5.11-RC Phase 17: No functions provided → INVALID, not MEASURED.
+        assert measurement.status == MeasurementStatus.INVALID
         assert measurement.proposal_latency_ms == 0.0
 
     def test_step_latency_does_not_degrade_across_steps(self):

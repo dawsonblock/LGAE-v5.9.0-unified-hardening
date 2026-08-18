@@ -34,7 +34,8 @@ def test_measure_tier_skipped():
 
 def test_measure_tier_without_functions():
     m = measure_tier(ScaleTier.S, n_nodes=50)
-    assert m.status == MeasurementStatus.MEASURED
+    # v5.11-RC Phase 17: No functions provided → INVALID, not MEASURED.
+    assert m.status == MeasurementStatus.INVALID
     assert m.proposal_latency_ms == 0.0
     assert m.diagnostic_latency_ms == 0.0
     assert m.commit_latency_ms == 0.0

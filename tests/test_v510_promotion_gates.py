@@ -33,7 +33,8 @@ def _passing_scientific_report():
 
 def _passing_performance_report():
     return PerformanceQualificationReport(measurements=[
-        TierMeasurement(tier=ScaleTier.S, n_nodes=100, status=MeasurementStatus.MEASURED),
+        TierMeasurement(tier=ScaleTier.S, n_nodes=100, status=MeasurementStatus.PASS),
+        TierMeasurement(tier=ScaleTier.M, n_nodes=1000, status=MeasurementStatus.PASS),
     ])
 
 

@@ -166,6 +166,13 @@ class PerformanceQualificationReport:
     def measured_tiers(self) -> list[ScaleTier]:
         return [m.tier for m in self.measurements if m.status == MeasurementStatus.MEASURED]
 
+    def result_for(self, tier: ScaleTier) -> TierMeasurement | None:
+        """Get the measurement for a specific tier, or None if not measured."""
+        for m in self.measurements:
+            if m.tier == tier:
+                return m
+        return None
+
     @property
     def xl_measured(self) -> bool:
         return any(m.tier == ScaleTier.XL and m.status == MeasurementStatus.MEASURED for m in self.measurements)
@@ -208,6 +215,11 @@ def measure_tier(
     if skip:
         return TierMeasurement(tier=tier, n_nodes=nn, status=MeasurementStatus.SKIPPED,
                                notes="explicitly skipped")
+
+    # v5.11-RC Phase 17: If no benchmark functions are provided, return INVALID.
+    if proposal_fn is None and diagnostic_fn is None and commit_fn is None:
+        return TierMeasurement(tier=tier, n_nodes=nn, status=MeasurementStatus.INVALID,
+                               notes="no benchmark functions provided")
 
     # Track peak memory via torch if available.
     try:

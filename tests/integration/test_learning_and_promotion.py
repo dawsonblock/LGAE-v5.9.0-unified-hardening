@@ -192,15 +192,23 @@ class TestGovernedModelPromotion:
 
     def test_promotion_to_production_with_checkpoint_passes(self):
         """Promotion to PRODUCTION with all gates + checkpoint is approved."""
-        # Create a performance report with at least one measured tier.
+        # v5.11-RC Phase 18: Performance gate requires PASS, not just MEASURED.
         perf = PerformanceQualificationReport()
         perf.add(TierMeasurement(
             tier=ScaleTier.S,
             n_nodes=100,
-            status=MeasurementStatus.MEASURED,
+            status=MeasurementStatus.PASS,
             proposal_latency_ms=10.0,
             commit_latency_ms=5.0,
             candidate_throughput=1000.0,
+        ))
+        perf.add(TierMeasurement(
+            tier=ScaleTier.M,
+            n_nodes=1000,
+            status=MeasurementStatus.PASS,
+            proposal_latency_ms=50.0,
+            commit_latency_ms=25.0,
+            candidate_throughput=500.0,
         ))
         # Create a scientific report with passing gates.
         sci = ScientificQualificationReport(

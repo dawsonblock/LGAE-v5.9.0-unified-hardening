@@ -129,10 +129,20 @@ def evaluate_promotion(
         else:
             gates.append(GateStatus(name="scientific", ran=False, passed=False))
         if performance_report is not None:
-            # Performance gate passes if at least tier S was measured.
-            measured = len(performance_report.measured_tiers) > 0
+            # v5.11-RC Phase 18: Performance gate requires PASS, not just
+            # measurement. The previous check (len(measured_tiers) > 0)
+            # passed even when all tiers FAILED.
+            from .performance_qualification import MeasurementStatus, ScaleTier
+            required_tiers = [ScaleTier.S]
+            if target_level >= PromotionLevel.PRODUCTION:
+                required_tiers = [ScaleTier.S, ScaleTier.M]
+            passed = all(
+                performance_report.result_for(tier) is not None
+                and performance_report.result_for(tier).qualification_status == MeasurementStatus.PASS
+                for tier in required_tiers
+            )
             gates.append(GateStatus(
-                name="performance", ran=True, passed=measured,
+                name="performance", ran=True, passed=passed,
                 evidence=performance_report.to_log(),
             ))
         else:
