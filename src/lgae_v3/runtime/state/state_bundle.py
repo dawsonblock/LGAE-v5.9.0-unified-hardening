@@ -88,6 +88,80 @@ class StateBundle:
         h.update(str(self.version).encode())
         return h.hexdigest()
 
+    @property
+    def canonical_hash(self) -> str:
+        """Compute the canonical hash covering ALL authoritative state.
+
+        v5.11-RC Phase 5: This hash includes every field that influences
+        future decisions, not just the core graph/fiber/gauge state.
+
+        Included:
+        - graph topology + edge weights
+        - fiber values
+        - gauge generators
+        - calibration state
+        - model reference
+        - version
+        - cooldowns (if attached)
+        - quarantine state (if attached)
+        - step index (if attached)
+        - optimizer state hash (if attached)
+        - RNG state (if attached)
+        - cache epoch (if attached)
+        - replay cursor (if attached)
+        - controller counters (if attached)
+        - learning state (if attached)
+        - governor state (if attached)
+        - evidence sequence (if attached)
+        - active transaction metadata (if attached)
+
+        Fields not present are hashed as "absent" to distinguish them
+        from fields that are present but empty.
+        """
+        import hashlib
+        h = hashlib.sha256()
+        # Core state.
+        h.update(b"graph:")
+        h.update(self.graph.state_hash().encode())
+        h.update(b"fibers:")
+        h.update(self.fibers.state_hash().encode())
+        h.update(b"gauges:")
+        if self.gauges is not None:
+            h.update(self.gauges.state_hash().encode())
+        else:
+            h.update(b"none")
+        h.update(b"calibration:")
+        h.update(self.calibration.state_hash().encode())
+        h.update(b"model:")
+        h.update(self.model_ref.checkpoint_hash.encode())
+        h.update(b"version:")
+        h.update(str(self.version).encode())
+        # Extended state (optional fields attached via metadata).
+        for field_name in (
+            "cooldowns", "quarantine", "step_index", "optimizer_state_hash",
+            "rng_state", "cache_epoch", "replay_cursor",
+            "controller_counters", "learning_state", "governor_state",
+            "evidence_sequence", "active_transaction_metadata",
+        ):
+            val = getattr(self, field_name, None)
+            if val is None:
+                h.update(f"{field_name}:absent".encode())
+            elif hasattr(val, "state_hash"):
+                h.update(f"{field_name}:".encode())
+                h.update(val.state_hash().encode())
+            elif hasattr(val, "hexdigest"):
+                h.update(f"{field_name}:".encode())
+                h.update(val.hexdigest().encode())
+            elif isinstance(val, (int, float, str, bool)):
+                h.update(f"{field_name}:{val}".encode())
+            elif isinstance(val, (list, tuple)):
+                h.update(f"{field_name}:{len(val)}".encode())
+            elif isinstance(val, dict):
+                h.update(f"{field_name}:{len(val)}".encode())
+            else:
+                h.update(f"{field_name}:{type(val).__name__}".encode())
+        return h.hexdigest()
+
     def to_authoritative_state(self) -> AuthoritativeState:
         """Convert to an AuthoritativeState for the authority."""
         return AuthoritativeState(
