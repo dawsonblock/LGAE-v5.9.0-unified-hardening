@@ -38,16 +38,28 @@ class RejectionReason(str, Enum):
 class AuthorizationResult(PhaseResult):
     """Output of the authorize() phase.
 
+    v5.11 Phase 6: Authorization cryptographically binds to the specific
+    transaction it approves. The transaction_hash field is mandatory for
+    AUTHORIZED results. Commit requires exact equality:
+
+        authorization.transaction_hash == transaction.transaction_hash
+
     Attributes:
         status: AUTHORIZED / REJECTED / QUARANTINED / DEFERRED
         reason: reason code if not authorized
         certification_level: certification level from evaluation
         authority_hash_before: state hash before authorization
+        transaction_hash: hash of the transaction being authorized (mandatory for AUTHORIZED)
+        candidate_id: identifier of the authorized candidate
+        evaluation_hash: hash of the evaluation being authorized
     """
     status: AuthorizationStatus = AuthorizationStatus.REJECTED
     reason: RejectionReason = RejectionReason.NO_OP
     certification_level: str | None = None
     authority_hash_before: str = ""
+    transaction_hash: str = ""
+    candidate_id: str = ""
+    evaluation_hash: str = ""
 
     def to_dict(self) -> dict[str, Any]:
         return {
@@ -58,6 +70,9 @@ class AuthorizationResult(PhaseResult):
             "reason": self.reason.value,
             "certification_level": self.certification_level,
             "authority_hash_before": self.authority_hash_before,
+            "transaction_hash": self.transaction_hash,
+            "candidate_id": self.candidate_id,
+            "evaluation_hash": self.evaluation_hash,
         }
 
     @property

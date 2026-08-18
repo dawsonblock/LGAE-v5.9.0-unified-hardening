@@ -244,6 +244,8 @@ def replay_committed_transactions(
                 if state is not None:
                     shadow = GraphBuffers.from_state_dict(state)
                     engine.graph = shadow
+                    # v5.11 Phase 8: bump version to match commit semantics.
+                    engine.graph.bump_version()
                     if hasattr(engine, "_invalidate_neighbor_indices"):
                         engine._invalidate_neighbor_indices("wal_recovery")
                     results.append({

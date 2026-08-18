@@ -281,15 +281,32 @@ class CommitChannel:
                 "transaction must be a StructuralTransaction"
             )
 
-        # Validation 3: authorization binding.
-        # The authorization_id in the transaction must match the
-        # authorization's binding hash.
+        # Validation 3: authorization binding (mandatory, non-nullable).
+        # v5.11 Phase 6: The transaction must have an authorization_id,
+        # and it must match the authorization_binding_hash. No nullable binding.
         expected_auth_id = transaction.authorization_binding_hash()
-        if transaction.authorization_id is not None:
-            if transaction.authorization_id != expected_auth_id:
+        if transaction.authorization_id is None:
+            raise AuthorizationBindingError(
+                "transaction.authorization_id is None; "
+                "authorization binding is mandatory (defect D11-009)"
+            )
+        if transaction.authorization_id != expected_auth_id:
+            raise AuthorizationBindingError(
+                "transaction.authorization_id does not match "
+                "authorization_binding_hash; possible swap attack"
+            )
+        # v5.11 Phase 6: If authorization has a transaction_hash, it must
+        # match the transaction's identity. This cryptographically binds
+        # the authorization to the exact transaction.
+        if hasattr(authorization, 'transaction_hash') and authorization.transaction_hash:
+            txn_hash = getattr(transaction, 'transaction_id', '') or \
+                       getattr(transaction, 'delta_hash', '')
+            if authorization.transaction_hash and txn_hash and \
+               authorization.transaction_hash != txn_hash:
                 raise AuthorizationBindingError(
-                    "transaction.authorization_id does not match "
-                    "authorization_binding_hash; possible swap attack"
+                    f"authorization.transaction_hash does not match "
+                    f"transaction identity; the authorization was for a "
+                    f"different transaction (possible reuse attack)"
                 )
 
         # Validation 4: base state must match current engine state.
@@ -323,77 +340,104 @@ class CommitChannel:
             )
 
         # All validations passed. Apply the transaction atomically.
+        # v5.11 Phase 7: Exception-atomic commit with rollback.
         def _apply() -> CommitResult:
+            # v5.11 Phase 7: Capture complete pre-state for rollback.
+            pre_graph = self._engine.graph
+            pre_fiber_snapshot = self._engine.fibers.snapshot()
+            pre_gauge_raw = None
+            if self._engine.gauge_connections is not None:
+                pre_gauge_raw = self._engine.gauge_connections.raw_generators.detach().clone()
+            pre_hash = self._engine.authority_hash()
+
             # WAL: write BEGIN + WRITE records before applying.
-            # The WRITE record contains the full transaction state so
-            # recovery can re-apply it after a crash.
             wal_txn_id = None
-            if self._wal is not None:
-                wal_txn_id = self._wal.begin({
-                    "transaction_id": transaction.transaction_id,
-                    "base_state_hash": transaction.base_state_hash,
-                    "base_state_version": transaction.base_state_version,
-                })
-                if transaction.graph_delta is not None:
-                    # Serialize the shadow graph for recovery.
-                    # Convert tensors to lists for JSON serialization.
-                    sg = transaction.graph_delta.shadow_graph
-                    sd = sg.to_state_dict()
-                    json_state = {}
-                    for k, v in sd.items():
-                        if hasattr(v, "tolist"):
-                            json_state[k] = v.tolist()
-                        else:
-                            json_state[k] = v
-                    self._wal.write(wal_txn_id, {
-                        "kind": "graph",
-                        "shadow_graph_hash": sg.state_hash(),
-                        "shadow_graph_state": json_state,
-                        "mutation_name": transaction.graph_delta.mutation_name,
+            try:
+                if self._wal is not None:
+                    wal_txn_id = self._wal.begin({
+                        "transaction_id": transaction.transaction_id,
+                        "base_state_hash": transaction.base_state_hash,
+                        "base_state_version": transaction.base_state_version,
                     })
+                    if transaction.graph_delta is not None:
+                        sg = transaction.graph_delta.shadow_graph
+                        sd = sg.to_state_dict()
+                        json_state = {}
+                        for k, v in sd.items():
+                            if hasattr(v, "tolist"):
+                                json_state[k] = v.tolist()
+                            else:
+                                json_state[k] = v
+                        self._wal.write(wal_txn_id, {
+                            "kind": "graph",
+                            "shadow_graph_hash": sg.state_hash(),
+                            "shadow_graph_state": json_state,
+                            "mutation_name": transaction.graph_delta.mutation_name,
+                        })
 
-            # Apply graph delta.
-            if transaction.graph_delta is not None:
-                old_valid = self._engine.graph.valid.clone()
-                self._engine.graph = transaction.graph_delta.shadow_graph
-                # Sync gauge generations if needed.
-                if self._engine.gauge_connections is not None:
-                    reset = torch.where(
-                        old_valid != self._engine.graph.valid
-                    )[0]
-                    self._engine.gauge_connections.reset_slots(
-                        reset,
-                        optimizers=self._engine.optimizers,
-                        sync_generation=self._engine.graph.slot_generation,
-                    )
-                self._engine._invalidate_neighbor_indices("transaction_commit")
-
-            # Apply fiber delta.
-            if transaction.fiber_delta is not None:
-                self._engine.fibers.restore(
-                    transaction.fiber_delta.shadow_fiber_snapshot
-                )
-
-            # Apply gauge delta.
-            if transaction.gauge_delta is not None:
-                if self._engine.gauge_connections is not None:
-                    self._engine.gauge_connections.raw_generators.copy_(
-                        transaction.gauge_delta.shadow_gauge_raw.to(
-                            self._engine.gauge_connections.raw_generators
+                # Apply graph delta.
+                if transaction.graph_delta is not None:
+                    old_valid = self._engine.graph.valid.clone()
+                    self._engine.graph = transaction.graph_delta.shadow_graph
+                    # v5.11 Phase 8: Increment version for CAS semantics.
+                    self._engine.graph.bump_version()
+                    if self._engine.gauge_connections is not None:
+                        reset = torch.where(
+                            old_valid != self._engine.graph.valid
+                        )[0]
+                        self._engine.gauge_connections.reset_slots(
+                            reset,
+                            optimizers=self._engine.optimizers,
+                            sync_generation=self._engine.graph.slot_generation,
                         )
+                    self._engine._invalidate_neighbor_indices("transaction_commit")
+
+                # Apply fiber delta.
+                if transaction.fiber_delta is not None:
+                    self._engine.fibers.restore(
+                        transaction.fiber_delta.shadow_fiber_snapshot
                     )
 
-            # Record cooldowns if mutation result has the mutation info.
-            if transaction.mutation_result is not None:
-                # The mutation was already evaluated; just record cooldown.
-                pass
+                # Apply gauge delta.
+                if transaction.gauge_delta is not None:
+                    if self._engine.gauge_connections is not None:
+                        self._engine.gauge_connections.raw_generators.copy_(
+                            transaction.gauge_delta.shadow_gauge_raw.to(
+                                self._engine.gauge_connections.raw_generators
+                            )
+                        )
 
-            after_hash = self._engine.authority_hash()
-            after_version = int(self._engine.graph.version)
+                # Verify post-state hash if expected.
+                after_hash = self._engine.authority_hash()
+                after_version = int(self._engine.graph.version)
 
-            # WAL: write COMMIT record after applying.
-            if self._wal is not None and wal_txn_id is not None:
-                self._wal.commit(wal_txn_id)
+                # WAL: write COMMIT record after successful apply.
+                if self._wal is not None and wal_txn_id is not None:
+                    self._wal.commit(wal_txn_id)
+
+            except BaseException:
+                # v5.11 Phase 7: Rollback to pre-state on any exception.
+                # This ensures exception atomicity — no partial state.
+                try:
+                    self._engine.graph = pre_graph
+                    self._engine.fibers.restore(pre_fiber_snapshot)
+                    if pre_gauge_raw is not None and self._engine.gauge_connections is not None:
+                        self._engine.gauge_connections.raw_generators.copy_(pre_gauge_raw)
+                    # Abort WAL transaction if started.
+                    if self._wal is not None and wal_txn_id is not None:
+                        self._wal.abort(wal_txn_id)
+                    # Verify rollback succeeded.
+                    post_rollback_hash = self._engine.authority_hash()
+                    if post_rollback_hash != pre_hash:
+                        raise RuntimeError(
+                            f"rollback failed: hash mismatch after restore "
+                            f"(expected {pre_hash[:16]}..., got {post_rollback_hash[:16]}...)"
+                        )
+                except Exception as rollback_error:
+                    raise RuntimeError(
+                        f"critical: rollback failed after commit exception: {rollback_error}"
+                    ) from rollback_error
+                raise
 
             self._commit_count += 1
             self._last_transaction_id = transaction.transaction_id
