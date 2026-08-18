@@ -180,7 +180,7 @@ def test_benchmark_harness_respects_task_subset():
 def test_checkpoint_payload_uses_canonical_current_version():
     engine = _engine()
     payload = engine.checkpoint_payload()
-    assert payload["version"] == VERSION == "5.10.0"
+    assert payload["version"] == VERSION == "5.11.0-dev"
 
 
 def test_transactional_fiber_action_commits_only_on_accept():

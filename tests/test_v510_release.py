@@ -7,15 +7,15 @@ from lgae_v3.version import VERSION, SCHEMA_VERSION, MANIFEST_SCHEMA
 
 
 def test_version_is_5_10():
-    assert VERSION == "5.10.0"
+    assert VERSION == "5.11.0-dev"
 
 
 def test_schema_version_updated():
-    assert "V5_10_0" in SCHEMA_VERSION
+    assert "V5_11_0" in SCHEMA_VERSION
 
 
 def test_manifest_schema_updated():
-    assert "V5_10_0" in MANIFEST_SCHEMA
+    assert "V5_11_0" in MANIFEST_SCHEMA
 
 
 def test_runtime_imports_complete():
