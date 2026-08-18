@@ -122,6 +122,11 @@ from .causal_credit import (
     CausalCreditAssignment, CausalCreditAssigner,
     average_causal_effect, credit_concentration,
 )
+from .graph_ops import (
+    compute_degrees, get_neighbors, build_adjacency_matrix,
+    connected_components, shortest_path_length, count_triangles,
+    graph_diameter,
+)
 from .canonical_runtime import LGAERuntime, UnauthorizedMutationError
 
 __all__ = [
@@ -286,4 +291,11 @@ __all__ = [
     "CausalCreditAssigner",
     "average_causal_effect",
     "credit_concentration",
+    "compute_degrees",
+    "get_neighbors",
+    "build_adjacency_matrix",
+    "connected_components",
+    "shortest_path_length",
+    "count_triangles",
+    "graph_diameter",
 ]
