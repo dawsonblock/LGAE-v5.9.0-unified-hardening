@@ -111,6 +111,7 @@ from .structural_credit import (
     CreditAssignment, direct_credit, feature_based_credit,
     temporal_credit, baseline_credit,
 )
+from .replay import ReplayTransition, ReplayBuffer
 from .canonical_runtime import LGAERuntime, UnauthorizedMutationError
 
 __all__ = [
@@ -263,4 +264,6 @@ __all__ = [
     "feature_based_credit",
     "temporal_credit",
     "baseline_credit",
+    "ReplayTransition",
+    "ReplayBuffer",
 ]
