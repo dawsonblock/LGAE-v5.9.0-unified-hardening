@@ -61,6 +61,9 @@ from .decision_trace import TraceEntry, DecisionTrace
 from .curriculum import (
     GraphFamily, CurriculumEntry, CurriculumGenerator, generate_graph,
 )
+from .ood_qualification import (
+    OODEvaluationResult, OODQualificationReport, evaluate_ood, to_scientific_report,
+)
 from .canonical_runtime import LGAERuntime, UnauthorizedMutationError
 
 __all__ = [
@@ -140,4 +143,8 @@ __all__ = [
     "CurriculumEntry",
     "CurriculumGenerator",
     "generate_graph",
+    "OODEvaluationResult",
+    "OODQualificationReport",
+    "evaluate_ood",
+    "to_scientific_report",
 ]

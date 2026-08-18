@@ -109,10 +109,10 @@ def _edges_barbell(n: int) -> list[tuple[int, int]]:
     # Bridge.
     if n > 2 * clique_size:
         bridge_start = clique_size
-        bridge_end = n - clique_size
+        bridge_end = n - clique_size - 1
         for i in range(bridge_start, bridge_end):
             edges.append((i, i + 1))
-        # Connect to second clique.
+        # Connect first clique to bridge start, bridge end to second clique.
         edges.append((clique_size - 1, bridge_start))
         edges.append((bridge_end, n - clique_size))
     # Second clique.
@@ -203,7 +203,14 @@ def _edges_random_ws(n: int, seed: int = 0, k: int = 4, p: float = 0.1) -> list[
             new_v = rng.randint(0, n - 1)
             if new_v != u and new_v != v:
                 edge_list[i] = (min(u, new_v), max(u, new_v))
-    return edge_list if edge_list else [(0, 1)] if n >= 2 else []
+    # Deduplicate and filter self-edges.
+    seen: set[tuple[int, int]] = set()
+    clean: list[tuple[int, int]] = []
+    for u, v in edge_list:
+        if u != v and (u, v) not in seen:
+            seen.add((u, v))
+            clean.append((u, v))
+    return clean if clean else [(0, 1)] if n >= 2 else []
 
 
 _EDGE_GENERATORS = {
