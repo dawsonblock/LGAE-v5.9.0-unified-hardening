@@ -310,19 +310,29 @@ class CommitChannel:
                 "transaction.authorization_id does not match "
                 "authorization_binding_hash; possible swap attack"
             )
-        # v5.11 Phase 6: If authorization has a transaction_hash, it must
-        # match the transaction's identity. This cryptographically binds
-        # the authorization to the exact transaction.
-        if hasattr(authorization, 'transaction_hash') and authorization.transaction_hash:
-            txn_hash = getattr(transaction, 'transaction_id', '') or \
-                       getattr(transaction, 'delta_hash', '')
-            if authorization.transaction_hash and txn_hash and \
-               authorization.transaction_hash != txn_hash:
-                raise AuthorizationBindingError(
-                    f"authorization.transaction_hash does not match "
-                    f"transaction identity; the authorization was for a "
-                    f"different transaction (possible reuse attack)"
-                )
+        # v5.11-RC Phase 6: transaction_hash is MANDATORY for AUTHORIZED
+        # commits. An empty transaction_hash means the authorization is not
+        # cryptographically bound to any transaction — this is rejected.
+        if not getattr(authorization, 'transaction_hash', ''):
+            raise AuthorizationBindingError(
+                "authorization.transaction_hash is empty; "
+                "transaction binding is mandatory for AUTHORIZED commits "
+                "(defect D11-009: optional binding was bypassable)"
+            )
+        # The transaction_hash must match the transaction's identity.
+        txn_hash = getattr(transaction, 'transaction_id', '') or \
+                   getattr(transaction, 'delta_hash', '')
+        if not txn_hash:
+            raise AuthorizationBindingError(
+                "transaction has no transaction_id or delta_hash; "
+                "cannot bind authorization"
+            )
+        if authorization.transaction_hash != txn_hash:
+            raise AuthorizationBindingError(
+                f"authorization.transaction_hash does not match "
+                f"transaction identity; the authorization was for a "
+                f"different transaction (possible reuse attack)"
+            )
 
         # Validation 4: base state must match current engine state.
         current_hash = self._engine.authority_hash()

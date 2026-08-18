@@ -147,6 +147,7 @@ class TestReplayRecovery:
             state_version=int(rt.engine.graph.version),
             state_hash=rt.authority_hash,
             status=AuthorizationStatus.AUTHORIZED,
+            transaction_hash=txn.transaction_id,
         )
         from lgae_v3.runtime.transaction import StructuralTransaction
         txn = StructuralTransaction(

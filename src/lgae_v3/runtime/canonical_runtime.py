@@ -621,6 +621,9 @@ class LGAERuntime:
             reason=reason,
             certification_level=self._certification_level,
             authority_hash_before=observation.state_hash,
+            transaction_hash=transaction.transaction_id if transaction is not None else "",
+            candidate_id=transaction.candidate_id if transaction is not None else "",
+            evaluation_hash=evaluation.to_hash() if evaluation is not None else "",
         )
         self._emit(RuntimePhase.AUTHORIZE, {"decision": status.value, "reason": reason.value})
         return result

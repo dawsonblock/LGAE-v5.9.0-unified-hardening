@@ -111,6 +111,7 @@ class TestMandatoryAuthorizationBinding:
             state_version=int(rt.engine.graph.version),
             state_hash=rt.authority_hash,
             status=AuthorizationStatus.AUTHORIZED,
+            transaction_hash=txn.transaction_id,
         )
         with pytest.raises(AuthorizationBindingError, match="mandatory"):
             rt.commit_channel.commit(full_txn, auth)

@@ -50,6 +50,7 @@ class TestImmutability:
         a = AuthorizationResult(
             snapshot_id="s1", state_version=1, state_hash="h1",
             status=AuthorizationStatus.AUTHORIZED,
+            transaction_hash="test_txn_hash",
         )
         with pytest.raises((AttributeError, TypeError)):
             a.status = AuthorizationStatus.REJECTED

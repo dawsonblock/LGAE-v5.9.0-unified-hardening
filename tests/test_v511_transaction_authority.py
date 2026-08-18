@@ -113,6 +113,7 @@ class TestStaleTransactionRejection:
             snapshot_id="s1", state_version=999,
             state_hash="stale_hash_that_does_not_match",
             status=AuthorizationStatus.AUTHORIZED,
+            transaction_hash=fake_txn.transaction_id,
         )
         # Set the authorization_id on the transaction.
         from lgae_v3.runtime.transaction import StructuralTransaction
@@ -166,6 +167,7 @@ class TestAuthorizationBinding:
             snapshot_id="s1", state_version=0,
             state_hash=rt.authority_hash,
             status=AuthorizationStatus.AUTHORIZED,
+            transaction_hash=txn1.transaction_id,
         )
         # Try to use auth1's binding with txn2.
         from lgae_v3.runtime.transaction import StructuralTransaction
@@ -234,10 +236,17 @@ class TestConcurrency:
             mutation_result=MutationResult(MutationDecision.ACCEPT, []),
             step=0,
         )
-        auth = AuthorizationResult(
+        auth1 = AuthorizationResult(
             snapshot_id="s1", state_version=0,
             state_hash=rt.authority_hash,
             status=AuthorizationStatus.AUTHORIZED,
+            transaction_hash=txn1.transaction_id,
+        )
+        auth2 = AuthorizationResult(
+            snapshot_id="s1", state_version=0,
+            state_hash=rt.authority_hash,
+            status=AuthorizationStatus.AUTHORIZED,
+            transaction_hash=txn2.transaction_id,
         )
         from lgae_v3.runtime.transaction import StructuralTransaction
         txn1 = StructuralTransaction(
@@ -260,12 +269,12 @@ class TestConcurrency:
         )
 
         # First commit succeeds.
-        result1 = rt.commit_channel.commit(txn1, auth)
+        result1 = rt.commit_channel.commit(txn1, auth1)
         assert result1.committed
 
         # Second commit must fail (stale state — base hash no longer matches).
         with pytest.raises(StaleTransactionError):
-            rt.commit_channel.commit(txn2, auth)
+            rt.commit_channel.commit(txn2, auth2)
 
         # Only one commit happened.
         assert rt.commit_channel.commit_count == 1

@@ -139,6 +139,7 @@ class TestTransactionTamperingAttacks:
             snapshot_id="s1", state_version=0,
             state_hash=rt.authority_hash,
             status=AuthorizationStatus.AUTHORIZED,
+            transaction_hash=txn.transaction_id,
         )
         with pytest.raises(TransactionValidationError):
             rt.commit_channel.commit(tampered_txn, auth)
@@ -182,6 +183,7 @@ class TestTransactionTamperingAttacks:
             snapshot_id="s1", state_version=0,
             state_hash=rt.authority_hash,
             status=AuthorizationStatus.AUTHORIZED,
+            transaction_hash=txn.transaction_id,
         )
         with pytest.raises(TransactionValidationError):
             rt.commit_channel.commit(tampered_txn, auth)
@@ -221,6 +223,7 @@ class TestAuthorizationReplayAttacks:
             snapshot_id="s1", state_version=0,
             state_hash=rt.authority_hash,
             status=AuthorizationStatus.AUTHORIZED,
+            transaction_hash=txn1.transaction_id,
         )
         # Try to use txn1's authorization_id with txn2.
         txn2_with_txn1_auth = StructuralTransaction(
@@ -305,6 +308,7 @@ class TestStaleStateAttacks:
             snapshot_id="s1", state_version=0,
             state_hash="wrong_hash_that_does_not_match_anything",
             status=AuthorizationStatus.AUTHORIZED,
+            transaction_hash=txn.transaction_id,
         )
         txn = StructuralTransaction(
             transaction_id=txn.transaction_id,
@@ -336,6 +340,7 @@ class TestStaleStateAttacks:
             snapshot_id="s1", state_version=999,
             state_hash=rt.authority_hash,
             status=AuthorizationStatus.AUTHORIZED,
+            transaction_hash=txn.transaction_id,
         )
         txn = StructuralTransaction(
             transaction_id=txn.transaction_id,
