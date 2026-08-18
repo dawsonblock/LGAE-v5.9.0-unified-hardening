@@ -1,14 +1,14 @@
-# LGAE v5.11.0 Build Report
+# LGAE v5.11.0-RC Build Report
 
-Release: **Canonical Runtime Convergence**
+Release: **Authority and Durability Closure**
 
 ## Summary
 
-LGAE v5.11.0 is a runtime-convergence release, not a feature release. The
+LGAE v5.11.0-RC is the authority and durability closure release. The
 objective is transactional correctness, crash-safety, determinism,
 self-verification, and scientific honesty.
 
-**Test suite: 1465 passed, 0 failed**
+**Test suite: 1585 passed, 0 failed**
 
 ## Defects repaired (19 total)
 
@@ -29,7 +29,7 @@ self-verification, and scientific honesty.
 
 - **D11-011**: `learn()` uses predicted delta as realized reward → Fixed: `realized_delta = U_after - U_before`
 - **D11-012**: Calibration compares delta prediction against absolute utility → Fixed: `calibrator.update(predicted, realized_delta)`
-- **D11-013**: Hierarchical credit not connected → Fixed: 6-field credit assignment (diagnostic/candidate/planner/action/governance/outcome)
+- **D11-013**: Hierarchical credit not connected → Fixed: 6-field per-subsystem credit assignment (diagnostic/candidate/planner/action/governance/outcome). Renamed from "hierarchical" to "per-subsystem" in v5.11-RC Phase 15.
 
 ### Qualification (Sprint 4)
 
@@ -42,6 +42,17 @@ self-verification, and scientific honesty.
 - **D11-015**: Hypothesis missing from dev dependencies → Fixed: added to `pyproject.toml`
 - **D11-016**: Release manifest still stale → Updated
 - **D11-017**: BUILD_REPORT remains v5.9 / 719 tests → Updated to v5.11.0 / 1458 tests
+
+### Authority and durability closure (v5.11-RC Phases 5-22)
+
+- **D11-020**: StateBundle.state_hash doesn't cover complete authoritative state → Fixed: `canonical_hash` property covers graph, fiber, gauge, calibration, model_ref, version, and 12 extended state fields
+- **D11-021**: WAL doesn't write complete transaction records → Fixed: `TX_PREPARE` record type with transaction_id, base_state_hash, base_state_version, delta_hash, authorization_id, delta presence flags
+- **D11-022**: Normal commit and recovery use different apply paths → Fixed: shared `apply_wal_mutation()` function used by both CommitChannel and `replay_committed_transactions()`
+- **D11-023**: No concurrency/CAS qualification tests → Added: 7 tests (stale version/hash rejected, concurrent commits only one succeeds, CAS atomic, CAS hash changes, failed CAS preserves state, sequential commits)
+- **D11-024**: Production startup doesn't verify WAL integrity → Fixed: `recover_from_wal()` method verifies hash chain, fails closed on corruption in production mode
+- **D11-025**: Credit assignment falsely claimed as "hierarchical" → Fixed: renamed to "per-subsystem credit attribution" in docstrings and comments
+- **D11-026**: MPC/IG causal relevance not tested → Added: 8 tests (multi-step exploration, utility selection, horizon effect, determinism, IG selection, ensemble disagreement, exploration bonus effect)
+- **D11-027**: Golden multi-domain transaction scenario → Added: 8 tests (joint graph/fiber/gauge transaction, crash matrix at every internal commit boundary, recovery produces exactly pre-state or post-state)
 
 ## Architecture
 
