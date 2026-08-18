@@ -46,6 +46,10 @@ from .scientific_qualification import (
     ScientificMetric, ScientificQualificationReport,
     ScientificGateError, assert_scientific_gate,
 )
+from .performance_qualification import (
+    ScaleTier, TIER_NODE_COUNTS, MeasurementStatus, TierMeasurement,
+    PerformanceQualificationReport, measure_tier, run_performance_qualification,
+)
 from .canonical_runtime import LGAERuntime, UnauthorizedMutationError
 
 __all__ = [
@@ -103,4 +107,11 @@ __all__ = [
     "ScientificQualificationReport",
     "ScientificGateError",
     "assert_scientific_gate",
+    "ScaleTier",
+    "TIER_NODE_COUNTS",
+    "MeasurementStatus",
+    "TierMeasurement",
+    "PerformanceQualificationReport",
+    "measure_tier",
+    "run_performance_qualification",
 ]
