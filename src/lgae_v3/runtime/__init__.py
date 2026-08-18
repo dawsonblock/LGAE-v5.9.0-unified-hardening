@@ -115,6 +115,9 @@ from .replay import ReplayTransition, ReplayBuffer
 from .hard_negative_replay import (
     HardNegative, HardNegativeMiner, augment_buffer_with_hard_negatives,
 )
+from .offline_rl import (
+    OfflineRLConfig, QNetwork, OfflineRLTrainer,
+)
 from .canonical_runtime import LGAERuntime, UnauthorizedMutationError
 
 __all__ = [
@@ -272,4 +275,7 @@ __all__ = [
     "HardNegative",
     "HardNegativeMiner",
     "augment_buffer_with_hard_negatives",
+    "OfflineRLConfig",
+    "QNetwork",
+    "OfflineRLTrainer",
 ]
