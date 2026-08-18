@@ -78,3 +78,80 @@ class RuntimeConfig:
             "evidence_path": None if self.evidence_path is None else str(self.evidence_path),
             "receipt_path": None if self.receipt_path is None else str(self.receipt_path),
         }
+
+
+# ---------------------------------------------------------------------------
+# Phase 43: typed configuration presets and loader.
+# ---------------------------------------------------------------------------
+
+def research_runtime_config() -> RuntimeConfig:
+    """Research preset: in-memory evidence, no signing, relaxed ordering constraints."""
+    return RuntimeConfig(
+        mode=RuntimeMode.RESEARCH,
+        mpc_horizon=1,
+        ensemble_size=5,
+        max_candidates=5,
+        require_signed_receipts=False,
+        deterministic_ordering=True,
+        max_stale_read_retries=4,
+    )
+
+
+def production_runtime_config(
+    *,
+    evidence_path: str | Path,
+    receipt_path: str | Path,
+    signing_key: str,
+) -> RuntimeConfig:
+    """Production preset: signed receipts, persisted evidence, fail-closed."""
+    return RuntimeConfig(
+        mode=RuntimeMode.PRODUCTION,
+        evidence_path=str(evidence_path),
+        receipt_path=str(receipt_path),
+        signing_key=str(signing_key),
+        require_signed_receipts=True,
+        deterministic_ordering=True,
+        max_stale_read_retries=8,
+        mpc_horizon=1,
+        ensemble_size=5,
+        max_candidates=5,
+    )
+
+
+def benchmark_runtime_config() -> RuntimeConfig:
+    """Benchmark preset: research mode, larger candidate sets, no persistence."""
+    return RuntimeConfig(
+        mode=RuntimeMode.RESEARCH,
+        mpc_horizon=1,
+        ensemble_size=3,
+        max_candidates=16,
+        require_signed_receipts=False,
+        deterministic_ordering=True,
+        max_stale_read_retries=2,
+    )
+
+
+PRESETS: dict[str, Callable[[], RuntimeConfig]] = {
+    "research": research_runtime_config,
+    "production": production_runtime_config,
+    "benchmark": benchmark_runtime_config,
+}
+
+
+def load_runtime_config(preset: str | None = None, **overrides: Any) -> RuntimeConfig:
+    """Load a runtime config by preset name with optional overrides.
+
+    ``preset`` selects a preset factory; ``overrides`` are applied on top of
+    the preset's config. For ``production``, the required arguments
+    (evidence_path, receipt_path, signing_key) must be provided via overrides.
+    """
+    if preset is None:
+        return RuntimeConfig(**overrides)
+    if preset not in PRESETS:
+        raise ValueError(f"unknown runtime config preset: {preset!r}; choose from {sorted(PRESETS.keys())}")
+    base = PRESETS[preset]()
+    # Apply overrides by replacing fields on the dataclass.
+    if not overrides:
+        return base
+    from dataclasses import replace
+    return replace(base, **overrides)
