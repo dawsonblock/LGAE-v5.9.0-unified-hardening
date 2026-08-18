@@ -187,6 +187,36 @@ class LGAERuntime:
         self.commit_event_bus = CommitEventBus()
         self.cache_registry = CacheRegistry(self.commit_event_bus)
 
+    def recover_from_wal(self) -> list[dict[str, Any]]:
+        """Recover committed transactions from the WAL.
+
+        v5.11-RC Phase 14: Production startup must use this method to
+        replay committed transactions. This ensures that recovery uses
+        the canonical authority state and WAL protocol.
+
+        In production mode, if the WAL is not available or is corrupted,
+        this method raises an error (fail-closed).
+        """
+        if self._wal is None:
+            if self.runtime_config.is_production:
+                raise RuntimeError(
+                    "production runtime requires a WAL for recovery; "
+                    "no WAL path configured"
+                )
+            return []
+        # Verify the WAL hash chain.
+        if not self._wal.verify_chain():
+            if self.runtime_config.is_production:
+                raise RuntimeError(
+                    "WAL hash chain verification failed; "
+                    "cannot recover from corrupted WAL (fail-closed)"
+                )
+        # Replay committed transactions.
+        from .wal import replay_committed_transactions
+        return replay_committed_transactions(
+            self.runtime_config.wal_path, self._engine,
+        )
+
     # ------------------------------------------------------------------ #
     # Public API: read-only engine facade (Phase 1)
     # ------------------------------------------------------------------ #
