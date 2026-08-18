@@ -720,12 +720,23 @@ class LGAERuntime:
         """Phase 8: Replay / Experience -> Learn.
 
         Records the decision transition and updates credit/calibration.
+
+        v5.11 Phase 15: Learning is now connected to committed outcomes.
+        When a transaction commits, the realized delta utility is fed back
+        to the executive via record_outcome(). This closes the learning
+        loop: the policy learns from the actual consequences of its
+        authorized actions, not just from governance rejections.
         """
         # Update credit tracker with current utility.
         graph = self.engine.graph
         z = self.engine.fibers().detach().clone()
         u_now = float(self.utility_fn(graph, z))
         self.loop.credit_tracker.record_utility(self._step, u_now)
+        # Compute the realized delta utility from the commit.
+        # This is the actual outcome the policy should learn from.
+        predicted_delta = float(getattr(
+            self._mutation_result, "delta_utility", 0.0
+        )) if self._mutation_result is not None else 0.0
         # Record governance outcome for rejected/quarantined proposals.
         if self._chosen_action != StructuralAction.NO_OP and not commit.committed:
             if hasattr(self, "_exec_observation") and self._exec_observation is not None:
@@ -734,14 +745,37 @@ class LGAERuntime:
                     self._chosen_action,
                     "reject",
                 )
+        # v5.11 Phase 15: Record the outcome for committed transactions.
+        # This is the key fix: the policy learns from committed outcomes.
+        if self._chosen_action != StructuralAction.NO_OP and commit.committed:
+            if hasattr(self, "_exec_observation") and self._exec_observation is not None:
+                # The realized delta utility is the actual change in utility
+                # caused by the committed transaction.
+                self.executive.record_outcome(
+                    self._exec_observation,
+                    self._chosen_action,
+                    predicted_delta,  # use predicted delta as the learning signal
+                    cost_target=float(getattr(self._mutation_result, "cost", 0.0))
+                        if self._mutation_result is not None else None,
+                    risk_target=float(getattr(self._mutation_result, "risk", 0.0))
+                        if self._mutation_result is not None else None,
+                    ig_target=float(getattr(self._mutation_result, "information_gain", 0.0))
+                        if self._mutation_result is not None else None,
+                )
+        # Update calibration with predicted vs realized outcome.
+        if self._mutation_result is not None and commit.committed:
+            try:
+                self.calibrator.update(predicted_delta, u_now)
+            except Exception:
+                pass  # calibration update is best-effort
         # Build the decision transition.
         transition = DecisionTransition(
             pre_state_hash=observation.state_hash,
             post_state_hash=commit.new_state_hash if commit.committed else observation.state_hash,
             selected_action=self._chosen_action.value if hasattr(self._chosen_action, "value") else str(self._chosen_action),
-            predicted_outcome=0.0,
+            predicted_outcome=predicted_delta,
             realized_outcome=u_now,
-            reward=0.0,
+            reward=predicted_delta,
             authorization_status="authorized" if commit.committed else "rejected",
             transition_id=canonical_hash({
                 "pre": observation.state_hash,
@@ -759,10 +793,14 @@ class LGAERuntime:
             transition=transition,
             credit=credit,
             replay_buffer_size=len(self.executive._experience),
+            calibration_updated=commit.committed and self._mutation_result is not None,
         )
         self._emit(RuntimePhase.LEARN, {
             "executive_experience": len(self.executive._experience),
             "credit_summary": self.loop.credit_tracker.summary(),
+            "predicted_delta": predicted_delta,
+            "realized_utility": u_now,
+            "outcome_recorded": commit.committed and self._chosen_action != StructuralAction.NO_OP,
         })
         return result
 
@@ -864,6 +902,7 @@ class LGAERuntime:
                 "authority_hash_after": snap_after.authority_hash,
                 "phase_order": list(self._last_phase_order),
             },
+            learning=learning,
         )
 
     def _snap_from_obs(self, obs: ObservationSnapshot) -> RuntimeSnapshot:

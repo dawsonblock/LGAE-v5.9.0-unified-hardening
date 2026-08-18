@@ -7,6 +7,7 @@ from typing import Any
 from ..types import MutationDecision
 from .runtime_state import RuntimeSnapshot
 from .runtime_events import RuntimePhase
+from .contracts.learning import LearningResult
 
 
 @dataclass(slots=True)
@@ -32,6 +33,7 @@ class RuntimeStepResult:
     receipt_hash: str | None = None
     phases: dict[str, Any] = field(default_factory=dict)
     metadata: dict[str, Any] = field(default_factory=dict)
+    learning: LearningResult | None = None
 
     @property
     def decision(self) -> str:
