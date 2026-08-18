@@ -215,6 +215,33 @@ class TestAblationStructure:
         assert "phase_order" in result.metadata
         assert result.metadata["version"] == "5.11.0-dev"
 
+    def test_real_graph_benchmarks_flag_synthetic_provenance(self):
+        """D11-019: Real graph benchmarks must flag synthetic surrogates honestly."""
+        from lgae_v3.runtime.real_graphs import (
+            RealGraphBenchmark, load_benchmark, list_benchmarks,
+        )
+        for spec in list_benchmarks():
+            loaded_spec, graph = load_benchmark(spec.name)
+            # is_real_data must be explicitly set (not defaulted silently).
+            assert hasattr(loaded_spec, 'is_real_data')
+            # If it's synthetic, the description must say so.
+            if not loaded_spec.is_real_data:
+                assert "synthetic" in loaded_spec.description.lower() or \
+                       "approximation" in loaded_spec.description.lower(), (
+                    f"Benchmark {loaded_spec.name.value} is synthetic but "
+                    f"description doesn't mention it: {loaded_spec.description}"
+                )
+
+    def test_karate_uses_real_data(self):
+        """Karate Club benchmark uses real edge data."""
+        from lgae_v3.runtime.real_graphs import RealGraphBenchmark, load_benchmark
+        spec, graph = load_benchmark(RealGraphBenchmark.KARATE)
+        assert spec.is_real_data, "Karate Club should use real edge data"
+        assert spec.n_nodes == 34
+        # The canonical Karate Club has 78 edges; our edge list may have
+        # a slightly different count due to canonicalization.
+        assert spec.n_edges >= 77, f"Expected ~78 edges, got {spec.n_edges}"
+
 
 class TestGraphFamilyCoverage:
     """The curriculum covers multiple graph families for OOD evaluation."""

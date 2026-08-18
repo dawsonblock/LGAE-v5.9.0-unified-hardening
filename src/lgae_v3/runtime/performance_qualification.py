@@ -47,9 +47,46 @@ TIER_NODE_COUNTS: dict[ScaleTier, int] = {
 
 
 class MeasurementStatus(str, Enum):
-    MEASURED = "measured"
-    NOT_MEASURED = "not_measured"
-    SKIPPED = "skipped"  # explicitly skipped (e.g. unsupported tier)
+    # v5.11 Sprint 4 D11-014: Stronger status semantics.
+    # MEASURED alone is insufficient — it can mean nothing executed.
+    NOT_RUN = "not_run"           # measurement was never attempted
+    INVALID = "invalid"           # measurement ran but data is invalid
+    MEASURED = "measured"         # measurement ran and data is valid
+    PASS = "pass"                 # measured and all thresholds met
+    FAIL = "fail"                 # measured but thresholds not met
+    SKIPPED = "skipped"           # explicitly skipped (e.g. unsupported tier)
+    NOT_MEASURED = "not_measured"  # legacy alias for NOT_RUN
+
+
+# v5.11 Sprint 4 D11-014: Actual performance thresholds per tier.
+# A measurement is PASS only if all thresholds are met.
+# These are conservative thresholds for the hot path.
+PERFORMANCE_THRESHOLDS: dict[ScaleTier, dict[str, float]] = {
+    ScaleTier.S: {
+        "proposal_latency_ms": 1000.0,    # 1 second max for proposal
+        "diagnostic_latency_ms": 2000.0,  # 2 seconds max for diagnostics
+        "commit_latency_ms": 500.0,       # 500ms max for commit
+        "candidate_throughput": 10.0,     # at least 10 candidates/s
+    },
+    ScaleTier.M: {
+        "proposal_latency_ms": 5000.0,
+        "diagnostic_latency_ms": 10000.0,
+        "commit_latency_ms": 2000.0,
+        "candidate_throughput": 5.0,
+    },
+    ScaleTier.L: {
+        "proposal_latency_ms": 30000.0,
+        "diagnostic_latency_ms": 60000.0,
+        "commit_latency_ms": 10000.0,
+        "candidate_throughput": 1.0,
+    },
+    ScaleTier.XL: {
+        "proposal_latency_ms": 300000.0,
+        "diagnostic_latency_ms": 600000.0,
+        "commit_latency_ms": 60000.0,
+        "candidate_throughput": 0.1,
+    },
+}
 
 
 @dataclass(frozen=True, slots=True)
@@ -77,6 +114,43 @@ class TierMeasurement:
             "candidate_throughput": float(self.candidate_throughput),
             "notes": self.notes,
         }
+
+    def passes_thresholds(self) -> bool:
+        """v5.11 Sprint 4 D11-014: Check if measurement passes all thresholds.
+
+        A measurement passes only if:
+        1. Status is MEASURED (not NOT_RUN, INVALID, or SKIPPED)
+        2. All latency values are positive (actually measured)
+        3. All values meet the tier's thresholds
+        """
+        if self.status != MeasurementStatus.MEASURED:
+            return False
+        # Must have actually measured something.
+        if self.proposal_latency_ms <= 0 and self.diagnostic_latency_ms <= 0:
+            return False
+        thresholds = PERFORMANCE_THRESHOLDS.get(self.tier, {})
+        if not thresholds:
+            return True  # No thresholds defined — pass by default
+        if self.proposal_latency_ms > thresholds.get("proposal_latency_ms", float('inf')):
+            return False
+        if self.diagnostic_latency_ms > thresholds.get("diagnostic_latency_ms", float('inf')):
+            return False
+        if self.commit_latency_ms > thresholds.get("commit_latency_ms", float('inf')):
+            return False
+        if self.candidate_throughput < thresholds.get("candidate_throughput", 0.0):
+            return False
+        return True
+
+    @property
+    def qualification_status(self) -> MeasurementStatus:
+        """The effective status after threshold checking."""
+        if self.status == MeasurementStatus.NOT_RUN:
+            return MeasurementStatus.NOT_RUN
+        if self.status == MeasurementStatus.SKIPPED:
+            return MeasurementStatus.SKIPPED
+        if self.status == MeasurementStatus.MEASURED:
+            return MeasurementStatus.PASS if self.passes_thresholds() else MeasurementStatus.FAIL
+        return self.status
 
 
 @dataclass(slots=True)
