@@ -646,6 +646,11 @@ class LGAERuntime:
         if executed:
             self._assert_commit_authority()
             before_hash = observation.state_hash
+            # v5.11 Sprint 3 D11-011: Capture utility BEFORE commit for
+            # realized delta computation in learn().
+            self._u_before_commit = float(self.utility_fn(
+                self._engine.graph, self._engine.fibers().detach().clone(),
+            ))
             # v5.11 Phase 4-5: commit through the CommitChannel, not
             # by directly mutating engine state. The CommitChannel
             # validates authorization binding, base state, and delta hash.
@@ -746,19 +751,21 @@ class LGAERuntime:
 
         Records the decision transition and updates credit/calibration.
 
-        v5.11 Phase 15: Learning is now connected to committed outcomes.
-        When a transaction commits, the realized delta utility is fed back
-        to the executive via record_outcome(). This closes the learning
-        loop: the policy learns from the actual consequences of its
-        authorized actions, not just from governance rejections.
+        v5.11 Sprint 3: Learning integrity fixes.
+        D11-011: Uses realized delta utility (U_after - U_before), not predicted delta.
+        D11-012: Calibration compares predicted delta with realized delta, not absolute utility.
+        D11-013: Hierarchical credit assignment connected (not just flat outcome_credit).
         """
         # Update credit tracker with current utility.
         graph = self._engine.graph
         z = self._engine.fibers().detach().clone()
         u_now = float(self.utility_fn(graph, z))
         self.loop.credit_tracker.record_utility(self._step, u_now)
-        # Compute the realized delta utility from the commit.
+        # v5.11 Sprint 3 D11-011: Compute REALIZED delta utility.
+        # ΔU_realized = U_after - U_before
         # This is the actual outcome the policy should learn from.
+        u_before = float(getattr(self, "_u_before_commit", u_now))
+        realized_delta = u_now - u_before if commit.committed else 0.0
         predicted_delta = float(getattr(
             self._mutation_result, "delta_utility", 0.0
         )) if self._mutation_result is not None else 0.0
@@ -770,16 +777,14 @@ class LGAERuntime:
                     self._chosen_action,
                     "reject",
                 )
-        # v5.11 Phase 15: Record the outcome for committed transactions.
-        # This is the key fix: the policy learns from committed outcomes.
+        # v5.11 Sprint 3 D11-011: Record the outcome with REALIZED delta.
+        # The policy learns from the actual consequences of its actions.
         if self._chosen_action != StructuralAction.NO_OP and commit.committed:
             if hasattr(self, "_exec_observation") and self._exec_observation is not None:
-                # The realized delta utility is the actual change in utility
-                # caused by the committed transaction.
                 self.executive.record_outcome(
                     self._exec_observation,
                     self._chosen_action,
-                    predicted_delta,  # use predicted delta as the learning signal
+                    realized_delta,  # D11-011: use realized delta, not predicted
                     cost_target=float(getattr(self._mutation_result, "cost", 0.0))
                         if self._mutation_result is not None else None,
                     risk_target=float(getattr(self._mutation_result, "risk", 0.0))
@@ -787,10 +792,11 @@ class LGAERuntime:
                     ig_target=float(getattr(self._mutation_result, "information_gain", 0.0))
                         if self._mutation_result is not None else None,
                 )
-        # Update calibration with predicted vs realized outcome.
+        # v5.11 Sprint 3 D11-012: Calibration compares predicted delta
+        # with REALIZED delta, not absolute utility.
         if self._mutation_result is not None and commit.committed:
             try:
-                self.calibrator.update(predicted_delta, u_now)
+                self.calibrator.update(predicted_delta, realized_delta)
             except Exception:
                 pass  # calibration update is best-effort
         # Build the decision transition.
@@ -799,8 +805,8 @@ class LGAERuntime:
             post_state_hash=commit.new_state_hash if commit.committed else observation.state_hash,
             selected_action=self._chosen_action.value if hasattr(self._chosen_action, "value") else str(self._chosen_action),
             predicted_outcome=predicted_delta,
-            realized_outcome=u_now,
-            reward=predicted_delta,
+            realized_outcome=realized_delta,  # D11-011: realized delta, not absolute utility
+            reward=realized_delta,  # D11-011: reward is realized delta, not predicted
             authorization_status="authorized" if commit.committed else "rejected",
             transition_id=canonical_hash({
                 "pre": observation.state_hash,
@@ -808,8 +814,37 @@ class LGAERuntime:
                 "step": self._step,
             }),
         )
+        # v5.11 Sprint 3 D11-013: Hierarchical credit assignment.
+        # Distribute realized delta across subsystems instead of using
+        # flat outcome_credit = u_now.
+        # The credit tracker tracks mutation receipts and computes
+        # discounted returns R = Σ γ^τ ΔU_{t+τ}.
+        diagnostic_credit = 0.0
+        candidate_credit = 0.0
+        planner_credit = 0.0
+        action_credit = 0.0
+        governance_credit = 0.0
+        if commit.committed and realized_delta != 0.0:
+            # Distribute credit across subsystems.
+            # This is a simple hierarchical decomposition:
+            # - diagnostics: 10% (the observation/diagnostic phase)
+            # - candidates: 20% (the candidate generation phase)
+            # - planner: 20% (the counterfactual planning phase)
+            # - action: 20% (the action selection phase)
+            # - governance: 30% (the authorization/commit phase)
+            diagnostic_credit = realized_delta * 0.1
+            candidate_credit = realized_delta * 0.2
+            planner_credit = realized_delta * 0.2
+            action_credit = realized_delta * 0.2
+            governance_credit = realized_delta * 0.3
+        outcome_credit_val = realized_delta if commit.committed else 0.0
         credit = CreditAssignment(
-            outcome_credit=float(u_now),
+            diagnostic_credit=diagnostic_credit,
+            candidate_credit=candidate_credit,
+            planner_credit=planner_credit,
+            action_credit=action_credit,
+            governance_credit=governance_credit,
+            outcome_credit=outcome_credit_val,
         )
         result = LearningResult(
             snapshot_id=observation.snapshot_id,
@@ -824,7 +859,9 @@ class LGAERuntime:
             "executive_experience": len(self.executive._experience),
             "credit_summary": self.loop.credit_tracker.summary(),
             "predicted_delta": predicted_delta,
+            "realized_delta": realized_delta,  # D11-011: report realized delta
             "realized_utility": u_now,
+            "utility_before": u_before,  # D11-011: report u_before
             "outcome_recorded": commit.committed and self._chosen_action != StructuralAction.NO_OP,
         })
         return result
