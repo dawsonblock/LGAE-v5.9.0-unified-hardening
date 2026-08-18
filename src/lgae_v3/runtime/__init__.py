@@ -83,6 +83,10 @@ from .real_graphs import (
     load_benchmark, list_benchmarks,
 )
 from .sheaf import SheafConsistencyResult, certify_sheaf_consistency
+from .manifold_action import (
+    LieGroup, ManifoldAction, exponential_map, compose, inverse,
+    make_so3_action, make_su2_action, make_gl_action,
+)
 from .canonical_runtime import LGAERuntime, UnauthorizedMutationError
 
 __all__ = [
@@ -197,4 +201,12 @@ __all__ = [
     "list_benchmarks",
     "SheafConsistencyResult",
     "certify_sheaf_consistency",
+    "LieGroup",
+    "ManifoldAction",
+    "exponential_map",
+    "compose",
+    "inverse",
+    "make_so3_action",
+    "make_su2_action",
+    "make_gl_action",
 ]
