@@ -425,11 +425,11 @@ class LGAEEngine(nn.Module):
     def evaluate_fiber_action(self, action: str, *, node: int | None = None, width: int | None = None, capability: Any = None) -> MutationResult:
         """Transactionally spawn or prune local fiber capacity.
 
-        v5.11 Phase 5: Shadow-only evaluation. The mutation is applied to a
-        temporary shadow snapshot, evaluated, and the authoritative fiber state
-        is restored BEFORE evaluation. The authoritative state is never mutated
-        during evaluation. On ACCEPT, the shadow snapshot is applied via the
-        capability-gated commit path.
+        v5.11-RC Phase 3: True shadow-only evaluation. The mutation is applied
+        to a detached shadow clone of the fiber state, evaluated, and the
+        authoritative fiber state is NEVER mutated during evaluation.
+        On ACCEPT, the shadow snapshot is applied via the capability-gated
+        commit path.
         """
         action = str(action).lower()
         if action not in {"spawn_fiber", "prune_fiber"}:
@@ -454,48 +454,66 @@ class LGAEEngine(nn.Module):
         if node < 0 or node >= self.graph.num_nodes:
             return MutationResult(MutationDecision.REJECT, ["fiber_node_out_of_range"], metadata={"action": action, "node": node})
 
-        # v5.11 Phase 5: Apply mutation to live fibers temporarily, capture
-        # shadow snapshot, then RESTORE authoritative state BEFORE evaluation.
+        # v5.11-RC Phase 3: Build a SHADOW clone of the fiber state.
+        # Apply the mutation to the shadow, compute z_after from the shadow,
+        # and evaluate. The live fiber state is NEVER touched.
+        shadow_latent = self.fibers.latent.detach().clone()
+        shadow_gate_logits = self.fibers.gate_logits.detach().clone()
+        shadow_active_mask = self.fibers.active_mask.clone()
+        shadow_age = self.fibers.age.clone()
+        shadow_utility_ema = self.fibers.utility_ema.clone()
+        shadow_spawn_counter = self.fibers.spawn_counter.clone()
+        shadow_gamma_ema = self.fibers.gamma_ema.clone()
+
         changed_channels: list[int] = []
         if action == "spawn_fiber":
             if int(self.fibers.capacity[node].item()) >= self.cfg.fiber.d_max:
                 return MutationResult(MutationDecision.REJECT, ["fiber_node_at_capacity"], metadata={"action": action, "node": node})
-            event = self.fiber_controller.activate(torch.tensor([node], dtype=torch.long, device=self.fibers.latent.device), width=width)
-            changed_channels = [int(c) for c in event.channels.tolist()]
+            # Compute which channels would be activated.
+            current_capacity = int(shadow_active_mask[node].sum().item())
+            spawn_width = int(self.cfg.fiber.spawn_width if width is None else max(1, int(width)))
+            max_spawn = min(spawn_width, self.cfg.fiber.d_max - current_capacity)
+            if max_spawn <= 0:
+                return MutationResult(MutationDecision.REJECT, ["fiber_node_at_capacity"], metadata={"action": action, "node": node})
+            inactive = torch.where(~shadow_active_mask[node])[0]
+            channels = inactive[:max_spawn]
+            shadow_active_mask[node, channels] = True
+            shadow_gate_logits[node, channels] = self.cfg.fiber.birth_gate_logit
+            changed_channels = [int(c) for c in channels.tolist()]
         else:
-            active = torch.where(self.fibers.active_mask[node])[0]
+            active = torch.where(shadow_active_mask[node])[0]
             extra = active[active >= self.cfg.fiber.d_base]
             if extra.numel() == 0:
                 return MutationResult(MutationDecision.REJECT, ["no_prunable_channels_at_node"], metadata={"action": action, "node": node})
             prune_width = min(int(self.cfg.fiber.spawn_width if width is None else max(1, int(width))), int(extra.numel()))
-            utility = self.fibers.utility_ema[node, extra]
+            utility = shadow_utility_ema[node, extra]
             order = torch.argsort(utility)[:prune_width]
             channels = extra[order]
-            self.fibers.active_mask[node, channels] = False
-            self.fibers.gate_logits[node, channels].fill_(self.cfg.fiber.birth_gate_logit)
-            self.fibers.latent[node, channels].zero_()
-            self.fibers.age[node, channels].zero_()
-            self.fibers.utility_ema[node, channels].zero_()
+            shadow_active_mask[node, channels] = False
+            shadow_gate_logits[node, channels] = self.cfg.fiber.birth_gate_logit
+            shadow_latent[node, channels].zero_()
+            shadow_age[node, channels].zero_()
+            shadow_utility_ema[node, channels].zero_()
             changed_channels = [int(c) for c in channels.tolist()]
 
-        # Capture the shadow state (post-mutation).
-        shadow_snapshot = self.fibers.snapshot()
-        z_after = self.fibers().detach().clone()
+        # Compute z_after from the shadow state (without touching live fibers).
+        shadow_effective_mask = shadow_active_mask.float() * torch.sigmoid(shadow_gate_logits)
+        z_after = shadow_latent * shadow_effective_mask
 
-        # v5.11 Phase 5: RESTORE authoritative state BEFORE evaluation.
-        # This ensures zero authoritative mutation during evaluation.
-        self.fibers.restore(base_snapshot)
+        # Build the shadow snapshot for potential commit.
+        shadow_snapshot = FiberStateSnapshot(
+            shadow_latent, shadow_gate_logits, shadow_active_mask,
+            shadow_age, shadow_utility_ema, shadow_spawn_counter, shadow_gamma_ema,
+        )
 
-        # Evaluate using the shadow z_after (from the mutated state).
+        # Evaluate using the shadow z_after. Live state is untouched.
         result = self.governor.evaluate_latent_transition(
             self.graph, z_before, z_after, name=action, seed=self.cfg.seed + self.step_index,
             metadata={"node": node, "channels": changed_channels}, gauge_bank=self.gauge_connections,
         )
         if result.decision == MutationDecision.REJECT:
-            # No restore needed — authoritative state was already restored.
             pass
         elif result.decision == MutationDecision.QUARANTINE:
-            # No restore needed — authoritative state was already restored.
             self.quarantine.append(QuarantineItem(
                 kind="fiber", result=result, base_graph_version=int(self.graph.version),
                 base_graph_hash=self.graph.state_hash(), base_fiber_hash=base_fiber_hash,
@@ -514,11 +532,11 @@ class LGAEEngine(nn.Module):
     def evaluate_gauge_action(self, *, u: int | None = None, v: int | None = None, magnitude: float = 0.01, capability: Any = None) -> MutationResult:
         """Transactionally perturb one SO(d) edge connection.
 
-        v5.11 Phase 5: Shadow-only evaluation. The gauge mutation is applied
-        temporarily, the shadow state is captured, and the authoritative gauge
-        state is restored BEFORE evaluation. The authoritative state is never
-        mutated during evaluation. On ACCEPT, the shadow is applied via the
-        capability-gated commit path.
+        v5.11-RC Phase 3: True shadow-only evaluation. The gauge mutation is
+        applied to a detached shadow clone of the raw_generators tensor, and
+        a shadow gauge bank is created for evaluation. The authoritative gauge
+        state is NEVER mutated during evaluation. On ACCEPT, the shadow is
+        applied via the capability-gated commit path.
 
         The raw parameter lives in Euclidean space, but the exposed connection is
         always obtained from the skew Lie algebra through Cayley/exp, so this
@@ -544,36 +562,29 @@ class LGAEEngine(nn.Module):
             u, v = int(self.graph.src[slot]), int(self.graph.dst[slot])
 
         z_before = self.fibers().detach().clone()
-        raw_before = self.gauge_connections.raw_generators.detach().clone()
         base_gauge_hash = self.gauge_connections.state_hash()
         base_fiber_hash = self.fibers.state_hash()
         delta = float(magnitude)
-        # v5.11 Phase 5: Apply mutation temporarily, capture shadow, restore BEFORE evaluation.
-        self.gauge_connections.raw_generators[slot, 0, 1] += delta
-        self.gauge_connections.raw_generators[slot, 1, 0] -= delta
+
+        # v5.11-RC Phase 3: Create a SHADOW clone of the raw_generators.
+        # Apply the mutation to the shadow, create a shadow gauge bank,
+        # and evaluate using the shadow. Live gauge state is NEVER touched.
         shadow_raw = self.gauge_connections.raw_generators.detach().clone()
-        # RESTORE authoritative state BEFORE evaluation.
-        self.gauge_connections.raw_generators.copy_(raw_before)
-        # Evaluate using a temporary gauge bank with the shadow state.
-        # We need to create a temporary gauge bank for evaluation.
-        # The governor's evaluate_latent_transition uses the gauge_bank for
-        # connection matrices. We pass the shadow state via a temporary clone.
-        # For now, we re-apply the shadow for evaluation and restore after.
-        # This is still shadow-only because the authoritative state is restored
-        # after evaluation. A full shadow bank clone would be cleaner but
-        # requires deeper changes to the governor API.
-        self.gauge_connections.raw_generators.copy_(shadow_raw)
+        shadow_raw[slot, 0, 1] += delta
+        shadow_raw[slot, 1, 0] -= delta
+
+        # Create a shadow gauge bank for evaluation.
+        shadow_gauge = self._create_shadow_gauge_bank(shadow_raw)
+
+        # Evaluate using the shadow gauge bank. Live state is untouched.
         result = self.governor.evaluate_latent_transition(
             self.graph, z_before, z_before, name="change_gauge", seed=self.cfg.seed + self.step_index,
-            metadata={"slot": slot, "u": int(u), "v": int(v), "magnitude": delta}, gauge_bank=self.gauge_connections,
+            metadata={"slot": slot, "u": int(u), "v": int(v), "magnitude": delta},
+            gauge_bank=shadow_gauge,
         )
-        # Restore authoritative state after evaluation.
-        self.gauge_connections.raw_generators.copy_(raw_before)
         if result.decision == MutationDecision.REJECT:
-            # No restore needed — authoritative state was already restored.
             pass
         elif result.decision == MutationDecision.QUARANTINE:
-            # No restore needed — authoritative state was already restored.
             self.quarantine.append(QuarantineItem(
                 kind="gauge", result=result, base_graph_version=int(self.graph.version),
                 base_graph_hash=self.graph.state_hash(), base_fiber_hash=base_fiber_hash,
@@ -587,6 +598,18 @@ class LGAEEngine(nn.Module):
             self._invalidate_neighbor_indices("gauge_commit")
             result.metadata["authority_hash_after"] = self.authority_hash()
         return result
+
+    def _create_shadow_gauge_bank(self, shadow_raw: Tensor) -> Any:
+        """Create a shadow gauge bank with modified raw_generators.
+
+        The shadow bank shares the same structure as the live gauge bank
+        but has its own raw_generators tensor. This allows evaluation
+        without mutating live gauge state.
+        """
+        import copy
+        shadow = copy.deepcopy(self.gauge_connections)
+        shadow.raw_generators.data.copy_(shadow_raw)
+        return shadow
 
     def propose_ricci_flow(self, curvatures: dict[tuple[int, int], float], *, target_curvature: float | None = None) -> RicciFlowReweight:
         return RicciFlowReweight(
