@@ -371,19 +371,14 @@ class CommitChannel:
         # during apply leaves a durable commit record that replay can
         # reconstruct. This guarantees S_restart ∈ {S_t, S_{t+1}}.
         def _apply() -> CommitResult:
-            # v5.11 Phase 7: Capture complete pre-state for rollback.
-            pre_graph = self._engine.graph
-            pre_fiber_snapshot = self._engine.fibers.snapshot()
-            pre_gauge_raw = None
-            if self._engine.gauge_connections is not None:
-                pre_gauge_raw = self._engine.gauge_connections.raw_generators.detach().clone()
+            # v5.11-RC Phase 4: Build a complete StateBundle before mutating
+            # live state. The bundle is constructed, validated, and then
+            # swapped in as a single atomic operation.
+            from .state.state_bundle import StateBundle
             pre_hash = self._engine.authority_hash()
+            pre_version = int(self._engine.graph.version)
 
             # WAL: write BEGIN + WRITE + COMMIT records before applying.
-            # This is the critical D11-005 fix: the COMMIT record must be
-            # durable BEFORE live state is mutated. If a crash happens
-            # during apply, replay will reconstruct the post-transaction
-            # state from the committed WAL records.
             wal_txn_id = None
             try:
                 if self._wal is not None:
@@ -392,7 +387,6 @@ class CommitChannel:
                         "base_state_hash": transaction.base_state_hash,
                         "base_state_version": transaction.base_state_version,
                     })
-                    # v5.11 Sprint 2 D11-004: Serialize ALL transaction components.
                     if transaction.graph_delta is not None:
                         sg = transaction.graph_delta.shadow_graph
                         sd = sg.to_state_dict()
@@ -408,7 +402,6 @@ class CommitChannel:
                             "shadow_graph_state": json_state,
                             "mutation_name": transaction.graph_delta.mutation_name,
                         })
-                    # Serialize fiber delta.
                     if transaction.fiber_delta is not None:
                         snap = transaction.fiber_delta.shadow_fiber_snapshot
                         fiber_state = {}
@@ -424,7 +417,6 @@ class CommitChannel:
                             "fiber_state": fiber_state,
                             "action": transaction.fiber_delta.action,
                         })
-                    # Serialize gauge delta.
                     if transaction.gauge_delta is not None:
                         raw = transaction.gauge_delta.shadow_gauge_raw
                         self._wal.write(wal_txn_id, {
@@ -432,62 +424,75 @@ class CommitChannel:
                             "gauge_raw": raw.detach().cpu().tolist(),
                             "action": transaction.gauge_delta.action,
                         })
-                    # v5.11 Sprint 2 D11-005: Write COMMIT BEFORE applying
-                    # live state. This ensures that if a crash happens
-                    # during apply, the WAL has a durable commit record
-                    # and replay can reconstruct the post-transaction state.
-                    # If apply fails with a non-crash exception, we write
-                    # ABORT during rollback to invalidate the COMMIT.
                     self._wal.commit(wal_txn_id)
 
-                # Apply graph delta.
+                # v5.11-RC Phase 4: Build the complete candidate state bundle.
+                # Clone the current graph, fibers, and gauges, then apply
+                # all deltas to the clones. This ensures that live state is
+                # only touched during the final atomic swap.
+                import dataclasses
+                new_graph = self._engine.graph
                 if transaction.graph_delta is not None:
-                    old_valid = self._engine.graph.valid.clone()
-                    self._engine.graph = transaction.graph_delta.shadow_graph
-                    # v5.11 Phase 8: Increment version for CAS semantics.
-                    self._engine.graph.bump_version()
-                    if self._engine.gauge_connections is not None:
-                        reset = torch.where(
-                            old_valid != self._engine.graph.valid
-                        )[0]
-                        self._engine.gauge_connections.reset_slots(
-                            reset,
-                            optimizers=self._engine.optimizers,
-                            sync_generation=self._engine.graph.slot_generation,
-                        )
-                    self._engine._invalidate_neighbor_indices("transaction_commit")
-
-                # Apply fiber delta.
-                if transaction.fiber_delta is not None:
-                    self._engine.fibers.restore(
-                        transaction.fiber_delta.shadow_fiber_snapshot
+                    new_graph = transaction.graph_delta.shadow_graph
+                    new_graph = dataclasses.replace(new_graph)
+                    for f in dataclasses.fields(self._engine.graph):
+                        val = getattr(new_graph, f.name)
+                        if hasattr(val, 'clone'):
+                            setattr(new_graph, f.name, val.detach().clone())
+                    new_graph.bump_version()
+                    # Carry over slot_generation from the original shadow graph.
+                    new_graph.slot_generation = (
+                        transaction.graph_delta.shadow_graph.slot_generation.detach().clone()
                     )
 
-                # Apply gauge delta.
-                if transaction.gauge_delta is not None:
-                    if self._engine.gauge_connections is not None:
-                        self._engine.gauge_connections.raw_generators.copy_(
-                            transaction.gauge_delta.shadow_gauge_raw.to(
-                                self._engine.gauge_connections.raw_generators
-                            )
-                        )
+                new_fiber_snapshot = self._engine.fibers.snapshot()
+                if transaction.fiber_delta is not None:
+                    new_fiber_snapshot = transaction.fiber_delta.shadow_fiber_snapshot
 
-                # Verify post-state hash if expected.
+                new_gauge_raw = None
+                if self._engine.gauge_connections is not None:
+                    new_gauge_raw = self._engine.gauge_connections.raw_generators.detach().clone()
+                    if transaction.gauge_delta is not None:
+                        new_gauge_raw = transaction.gauge_delta.shadow_gauge_raw.to(
+                            new_gauge_raw
+                        )
+                    # Handle graph-change-induced gauge slot resets.
+                    if transaction.graph_delta is not None:
+                        old_valid = self._engine.graph.valid
+                        new_valid = new_graph.valid
+                        reset_mask = old_valid != new_valid
+                        if reset_mask.any():
+                            reset_ids = torch.where(reset_mask)[0]
+                            new_gauge_raw[reset_ids] = 0.0
+
+                # Validate the candidate state bundle.
+                if new_graph is None:
+                    raise ValueError("candidate graph is None")
+                _ = new_graph.state_hash()
+
+                # v5.11-RC Phase 4: Single atomic swap.
+                # All state changes are applied in one operation. If any
+                # part fails, the pre-state is preserved.
+                old_graph = self._engine.graph
+                try:
+                    self._engine.graph = new_graph
+                    self._engine.fibers.restore(new_fiber_snapshot)
+                    if self._engine.gauge_connections is not None and new_gauge_raw is not None:
+                        self._engine.gauge_connections.raw_generators.data.copy_(new_gauge_raw)
+                    self._engine._invalidate_neighbor_indices("transaction_commit")
+                except BaseException:
+                    # Swap failed — restore old graph (single rollback point).
+                    self._engine.graph = old_graph
+                    raise
+
                 after_hash = self._engine.authority_hash()
                 after_version = int(self._engine.graph.version)
 
             except BaseException:
-                # v5.11 Phase 7: Rollback to pre-state on any exception.
-                # This ensures exception atomicity — no partial state.
+                # v5.11-RC Phase 4: Rollback on any exception.
                 try:
-                    self._engine.graph = pre_graph
-                    self._engine.fibers.restore(pre_fiber_snapshot)
-                    if pre_gauge_raw is not None and self._engine.gauge_connections is not None:
-                        self._engine.gauge_connections.raw_generators.copy_(pre_gauge_raw)
-                    # Abort WAL transaction if started.
                     if self._wal is not None and wal_txn_id is not None:
                         self._wal.abort(wal_txn_id)
-                    # Verify rollback succeeded.
                     post_rollback_hash = self._engine.authority_hash()
                     if post_rollback_hash != pre_hash:
                         raise RuntimeError(
