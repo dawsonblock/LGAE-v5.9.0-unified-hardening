@@ -397,7 +397,7 @@ class CommitChannel:
             # v5.11-RC Phase 11: Failpoint before WAL BEGIN.
             self._check_failpoint("before_prepare")
 
-            # WAL: write BEGIN + WRITE + COMMIT records before applying.
+            # WAL: write BEGIN + TX_PREPARE + WRITE + COMMIT records before applying.
             wal_txn_id = None
             try:
                 if self._wal is not None:
@@ -405,6 +405,18 @@ class CommitChannel:
                         "transaction_id": transaction.transaction_id,
                         "base_state_hash": transaction.base_state_hash,
                         "base_state_version": transaction.base_state_version,
+                    })
+                    # v5.11-RC Phase 7: Write TX_PREPARE with complete
+                    # transaction metadata for recovery validation.
+                    self._wal.prepare(wal_txn_id, {
+                        "transaction_id": transaction.transaction_id,
+                        "base_state_hash": transaction.base_state_hash,
+                        "base_state_version": transaction.base_state_version,
+                        "delta_hash": transaction.delta_hash,
+                        "authorization_id": transaction.authorization_id or "",
+                        "has_graph_delta": transaction.graph_delta is not None,
+                        "has_fiber_delta": transaction.fiber_delta is not None,
+                        "has_gauge_delta": transaction.gauge_delta is not None,
                     })
                     if transaction.graph_delta is not None:
                         sg = transaction.graph_delta.shadow_graph

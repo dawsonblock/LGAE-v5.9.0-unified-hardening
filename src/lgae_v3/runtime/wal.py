@@ -29,6 +29,7 @@ from typing import Any, Iterator
 
 class WALRecordType(str, Enum):
     BEGIN = "begin"
+    TX_PREPARE = "tx_prepare"  # v5.11-RC Phase 7: complete transaction record
     WRITE = "write"
     COMMIT = "commit"
     ABORT = "abort"
@@ -198,6 +199,32 @@ class WriteAheadLog:
         self._active_txns[txn_id] = WALTransaction(txn_id=txn_id)
         return txn_id
 
+    def prepare(self, txn_id: int, transaction_data: dict[str, Any]) -> WALRecord:
+        """Write a TX_PREPARE record with the complete transaction.
+
+        v5.11-RC Phase 7: The TX_PREPARE record contains the complete
+        transaction information, including:
+        - transaction_id
+        - base_state_hash (expected pre-state)
+        - base_state_version
+        - expected_post_state_hash (if available)
+        - delta_hash
+        - authorization_id
+
+        This allows recovery to reconstruct and validate the complete
+        transaction, not just individual mutations.
+        """
+        if txn_id not in self._active_txns:
+            raise ValueError(f"txn {txn_id} is not active")
+        self._lsn += 1
+        record = WALRecord(
+            txn_id=txn_id, record_type=WALRecordType.TX_PREPARE, lsn=self._lsn,
+            payload=transaction_data, timestamp=time.time(),
+        )
+        self._append(record)
+        self._active_txns[txn_id].records.append(record)
+        return record
+
     def write(self, txn_id: int, mutation: dict[str, Any]) -> WALRecord:
         """Write a mutation within a transaction."""
         if txn_id not in self._active_txns:
@@ -313,6 +340,10 @@ def recover_transactions(records: list[WALRecord]) -> dict[int, list[dict[str, A
     for record in records:
         if record.record_type == WALRecordType.BEGIN:
             txns[record.txn_id] = []
+        elif record.record_type == WALRecordType.TX_PREPARE:
+            # v5.11-RC Phase 7: TX_PREPARE contains complete transaction info.
+            if record.txn_id in txns:
+                txns[record.txn_id].append(record.payload)
         elif record.record_type == WALRecordType.WRITE:
             if record.txn_id in txns:
                 txns[record.txn_id].append(record.payload)
@@ -324,6 +355,35 @@ def recover_transactions(records: list[WALRecord]) -> dict[int, list[dict[str, A
     return {
         txn_id: mutations
         for txn_id, mutations in txns.items()
+        if txn_id in committed and txn_id not in aborted
+    }
+
+
+def recover_transaction_metadata(records: list[WALRecord]) -> dict[int, dict[str, Any]]:
+    """Recover TX_PREPARE metadata for committed transactions.
+
+    v5.11-RC Phase 7: Returns a dict of {txn_id: metadata} for transactions
+    that have a TX_PREPARE record. This metadata includes:
+    - transaction_id
+    - base_state_hash (expected pre-state)
+    - base_state_version
+    - expected_post_state_hash (if available)
+    - delta_hash
+    - authorization_id
+    """
+    committed: set[int] = set()
+    aborted: set[int] = set()
+    prepare_data: dict[int, dict[str, Any]] = {}
+    for record in records:
+        if record.record_type == WALRecordType.TX_PREPARE:
+            prepare_data[record.txn_id] = record.payload
+        elif record.record_type == WALRecordType.COMMIT:
+            committed.add(record.txn_id)
+        elif record.record_type == WALRecordType.ABORT:
+            aborted.add(record.txn_id)
+    return {
+        txn_id: metadata
+        for txn_id, metadata in prepare_data.items()
         if txn_id in committed and txn_id not in aborted
     }
 
@@ -408,6 +468,10 @@ def replay_committed_transactions(
 
         # Apply the transaction using the shared apply path.
         for mutation in mutations:
+            # v5.11-RC Phase 7: Skip TX_PREPARE metadata records — they
+            # contain transaction metadata, not state mutations.
+            if "transaction_id" in mutation and "kind" not in mutation:
+                continue
             apply_wal_mutation(engine, mutation)
             results.append({
                 "txn_id": txn_id,
