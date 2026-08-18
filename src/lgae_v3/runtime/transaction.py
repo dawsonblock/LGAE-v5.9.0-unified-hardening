@@ -224,3 +224,164 @@ def make_graph_transaction(
         delta_hash=delta_hash,
         mutation_result=mutation_result,
     )
+
+
+def make_fiber_transaction(
+    *,
+    base_state_version: int,
+    base_state_hash: str,
+    shadow_fiber_snapshot: Any,
+    action: str = "",
+    mutation_result: MutationResult,
+    candidate_id: str | None = None,
+    plan_id: str | None = None,
+    step: int = 0,
+) -> StructuralTransaction:
+    """Create a StructuralTransaction from a shadow fiber evaluation.
+
+    v5.11-RC Phase 2: Fiber actions are first-class canonical transactions.
+    """
+    fiber_delta = FiberDelta(
+        shadow_fiber_snapshot=shadow_fiber_snapshot,
+        action=action,
+    )
+    txn = StructuralTransaction(
+        transaction_id="",
+        base_state_version=base_state_version,
+        base_state_hash=base_state_hash,
+        fiber_delta=fiber_delta,
+        candidate_id=candidate_id,
+        plan_id=plan_id,
+        mutation_result=mutation_result,
+    )
+    delta_hash = txn.compute_delta_hash()
+    txn_id = canonical_hash({
+        "base_state_hash": base_state_hash,
+        "delta_hash": delta_hash,
+        "step": step,
+    })
+    return StructuralTransaction(
+        transaction_id=txn_id,
+        base_state_version=base_state_version,
+        base_state_hash=base_state_hash,
+        fiber_delta=fiber_delta,
+        candidate_id=candidate_id,
+        plan_id=plan_id,
+        delta_hash=delta_hash,
+        mutation_result=mutation_result,
+    )
+
+
+def make_gauge_transaction(
+    *,
+    base_state_version: int,
+    base_state_hash: str,
+    shadow_gauge_raw: Tensor,
+    action: str = "",
+    mutation_result: MutationResult,
+    candidate_id: str | None = None,
+    plan_id: str | None = None,
+    step: int = 0,
+) -> StructuralTransaction:
+    """Create a StructuralTransaction from a shadow gauge evaluation.
+
+    v5.11-RC Phase 2: Gauge actions are first-class canonical transactions.
+    """
+    gauge_delta = GaugeDelta(
+        shadow_gauge_raw=shadow_gauge_raw,
+        action=action,
+    )
+    txn = StructuralTransaction(
+        transaction_id="",
+        base_state_version=base_state_version,
+        base_state_hash=base_state_hash,
+        gauge_delta=gauge_delta,
+        candidate_id=candidate_id,
+        plan_id=plan_id,
+        mutation_result=mutation_result,
+    )
+    delta_hash = txn.compute_delta_hash()
+    txn_id = canonical_hash({
+        "base_state_hash": base_state_hash,
+        "delta_hash": delta_hash,
+        "step": step,
+    })
+    return StructuralTransaction(
+        transaction_id=txn_id,
+        base_state_version=base_state_version,
+        base_state_hash=base_state_hash,
+        gauge_delta=gauge_delta,
+        candidate_id=candidate_id,
+        plan_id=plan_id,
+        delta_hash=delta_hash,
+        mutation_result=mutation_result,
+    )
+
+
+def make_joint_transaction(
+    *,
+    base_state_version: int,
+    base_state_hash: str,
+    shadow_graph: GraphBuffers | None = None,
+    shadow_fiber_snapshot: Any = None,
+    shadow_gauge_raw: Tensor | None = None,
+    graph_action: str = "",
+    fiber_action: str = "",
+    gauge_action: str = "",
+    mutation_result: MutationResult,
+    candidate_id: str | None = None,
+    plan_id: str | None = None,
+    step: int = 0,
+) -> StructuralTransaction:
+    """Create a joint StructuralTransaction changing graph, fiber, and gauge.
+
+    v5.11-RC Phase 2/20: Joint transactions are first-class canonical
+    transactions. One transaction, one authorization, one commit.
+    """
+    graph_delta = None
+    fiber_delta = None
+    gauge_delta = None
+    if shadow_graph is not None:
+        graph_delta = GraphDelta(
+            shadow_graph=shadow_graph,
+            mutation_name=graph_action,
+        )
+    if shadow_fiber_snapshot is not None:
+        fiber_delta = FiberDelta(
+            shadow_fiber_snapshot=shadow_fiber_snapshot,
+            action=fiber_action,
+        )
+    if shadow_gauge_raw is not None:
+        gauge_delta = GaugeDelta(
+            shadow_gauge_raw=shadow_gauge_raw,
+            action=gauge_action,
+        )
+    txn = StructuralTransaction(
+        transaction_id="",
+        base_state_version=base_state_version,
+        base_state_hash=base_state_hash,
+        graph_delta=graph_delta,
+        fiber_delta=fiber_delta,
+        gauge_delta=gauge_delta,
+        candidate_id=candidate_id,
+        plan_id=plan_id,
+        mutation_result=mutation_result,
+    )
+    delta_hash = txn.compute_delta_hash()
+    txn_id = canonical_hash({
+        "base_state_hash": base_state_hash,
+        "delta_hash": delta_hash,
+        "step": step,
+    })
+    return StructuralTransaction(
+        transaction_id=txn_id,
+        base_state_version=base_state_version,
+        base_state_hash=base_state_hash,
+        graph_delta=graph_delta,
+        fiber_delta=fiber_delta,
+        gauge_delta=gauge_delta,
+        candidate_id=candidate_id,
+        plan_id=plan_id,
+        delta_hash=delta_hash,
+        mutation_result=mutation_result,
+    )

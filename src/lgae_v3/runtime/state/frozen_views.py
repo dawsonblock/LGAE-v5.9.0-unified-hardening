@@ -265,6 +265,14 @@ class FrozenGaugeView:
         g = object.__getattribute__(self, "_gauge")
         return g.state_hash() if g is not None and hasattr(g, "state_hash") else ""
 
+    @property
+    def raw_generators(self) -> Tensor:
+        """Detached clone of the gauge raw generators."""
+        g = object.__getattribute__(self, "_gauge")
+        if g is not None and hasattr(g, "raw_generators"):
+            return g.raw_generators.detach().clone()
+        raise AttributeError("raw_generators not available on frozen gauge view")
+
     def __setattr__(self, name: str, value: Any) -> None:
         raise UnauthorizedMutationError(
             f"cannot set attribute '{name}' on FrozenGaugeView; "

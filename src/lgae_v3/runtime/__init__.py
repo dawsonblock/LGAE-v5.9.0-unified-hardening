@@ -146,6 +146,7 @@ from .transaction import (
     StructuralTransaction, GraphDelta, FiberDelta, GaugeDelta,
     TransactionValidationError, StaleTransactionError,
     AuthorizationBindingError, make_graph_transaction,
+    make_fiber_transaction, make_gauge_transaction, make_joint_transaction,
 )
 
 __all__ = [
@@ -343,4 +344,7 @@ __all__ = [
     "StaleTransactionError",
     "AuthorizationBindingError",
     "make_graph_transaction",
+    "make_fiber_transaction",
+    "make_gauge_transaction",
+    "make_joint_transaction",
 ]
