@@ -58,6 +58,9 @@ from .model_registry import (
     ModelRecord, PromotionTransition, ModelRegistry,
 )
 from .decision_trace import TraceEntry, DecisionTrace
+from .curriculum import (
+    GraphFamily, CurriculumEntry, CurriculumGenerator, generate_graph,
+)
 from .canonical_runtime import LGAERuntime, UnauthorizedMutationError
 
 __all__ = [
@@ -133,4 +136,8 @@ __all__ = [
     "ModelRegistry",
     "TraceEntry",
     "DecisionTrace",
+    "GraphFamily",
+    "CurriculumEntry",
+    "CurriculumGenerator",
+    "generate_graph",
 ]
