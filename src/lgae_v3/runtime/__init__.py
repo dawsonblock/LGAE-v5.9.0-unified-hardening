@@ -54,6 +54,9 @@ from .promotion import (
     PromotionLevel, GateStatus, PromotionReport,
     PromotionGateError, evaluate_promotion, assert_promotion,
 )
+from .model_registry import (
+    ModelRecord, PromotionTransition, ModelRegistry,
+)
 from .canonical_runtime import LGAERuntime, UnauthorizedMutationError
 
 __all__ = [
@@ -124,4 +127,7 @@ __all__ = [
     "PromotionGateError",
     "evaluate_promotion",
     "assert_promotion",
+    "ModelRecord",
+    "PromotionTransition",
+    "ModelRegistry",
 ]
