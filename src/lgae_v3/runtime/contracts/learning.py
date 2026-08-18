@@ -12,10 +12,11 @@ from .common import PhaseResult
 
 @dataclass(frozen=True, slots=True)
 class CreditAssignment:
-    """Hierarchical credit for a decision transition.
+    """Per-subsystem credit for a decision transition.
 
-    Instead of a single scalar reward, credit is decomposed by subsystem
-    so the system can diagnose which component caused a failure.
+    v5.11-RC Phase 15: This is per-subsystem scalar credit attribution,
+    not hierarchical credit assignment. Credit is decomposed by subsystem
+    so the system can diagnose which component contributed to an outcome.
     """
     diagnostic_credit: float = 0.0
     candidate_credit: float = 0.0
@@ -69,7 +70,7 @@ class LearningResult(PhaseResult):
 
     Attributes:
         transition: the decision transition record
-        credit: hierarchical credit assignment
+        credit: per-subsystem credit attribution
         replay_buffer_size: current replay buffer size
         calibration_updated: whether calibration was updated
         hard_negatives_added: count of hard negatives added

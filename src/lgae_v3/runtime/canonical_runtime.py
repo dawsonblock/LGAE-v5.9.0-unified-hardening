@@ -857,7 +857,7 @@ class LGAERuntime:
         governance_credit = 0.0
         if commit.committed and realized_delta != 0.0:
             # Distribute credit across subsystems.
-            # This is a simple hierarchical decomposition:
+            # v5.11-RC Phase 15: This is a simple per-subsystem decomposition:
             # - diagnostics: 10% (the observation/diagnostic phase)
             # - candidates: 20% (the candidate generation phase)
             # - planner: 20% (the counterfactual planning phase)
