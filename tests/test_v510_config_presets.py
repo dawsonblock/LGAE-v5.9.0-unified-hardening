@@ -22,6 +22,7 @@ def test_production_preset_requires_signing_key():
         evidence_path="/tmp/evidence.jsonl",
         receipt_path="/tmp/receipts.jsonl",
         signing_key="test-key",
+        wal_path="/tmp/wal.jsonl",
     )
     assert cfg.mode == RuntimeMode.PRODUCTION
     assert cfg.require_signed_receipts

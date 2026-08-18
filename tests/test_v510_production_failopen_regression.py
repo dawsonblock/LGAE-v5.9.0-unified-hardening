@@ -69,5 +69,18 @@ def test_production_succeeds_with_all_requirements():
         signing_key="test_key",
         evidence_path="/tmp/evidence.jsonl",
         receipt_path="/tmp/receipts.jsonl",
+        wal_path="/tmp/wal.jsonl",
     )
     assert config.is_production
+
+
+def test_production_fails_without_wal():
+    """Production mode must fail without wal_path."""
+    with pytest.raises(ValueError, match="wal_path"):
+        RuntimeConfig(
+            mode=RuntimeMode.PRODUCTION,
+            require_signed_receipts=True,
+            signing_key="test_key",
+            evidence_path="/tmp/evidence.jsonl",
+            receipt_path="/tmp/receipts.jsonl",
+        )

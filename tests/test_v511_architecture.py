@@ -223,5 +223,6 @@ class TestProduction:
             signing_key="test_key",
             evidence_path="/tmp/evidence.jsonl",
             receipt_path="/tmp/receipts.jsonl",
+            wal_path="/tmp/wal.jsonl",
         )
         assert config.is_production

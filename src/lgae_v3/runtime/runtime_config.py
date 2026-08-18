@@ -37,6 +37,10 @@ class RuntimeConfig:
     receipt_path: str | Path | None = None
     signing_key: str | None = None
     require_signed_receipts: bool = False
+    # WAL path for crash-safe transactions (v5.11 Phase 12).
+    # When set, every commit writes BEGIN/WRITE/COMMIT records to the WAL.
+    # In production mode, wal_path is required.
+    wal_path: str | Path | None = None
     # Optional structural MPC planning (Phase 14). When horizon > 1 the
     # runtime plans before committing, but only ever executes the first
     # action of the chosen plan (receding horizon).
@@ -82,6 +86,10 @@ class RuntimeConfig:
                 raise ValueError(
                     "production mode requires deterministic_ordering=True"
                 )
+            if self.wal_path is None:
+                raise ValueError(
+                    "production mode requires wal_path (crash-safe transaction log)"
+                )
         if int(self.mpc_horizon) < 1:
             raise ValueError("mpc_horizon must be >= 1")
         if int(self.max_stale_read_retries) < 0:
@@ -126,8 +134,9 @@ def production_runtime_config(
     evidence_path: str | Path,
     receipt_path: str | Path,
     signing_key: str,
+    wal_path: str | Path | None = None,
 ) -> RuntimeConfig:
-    """Production preset: signed receipts, persisted evidence, fail-closed."""
+    """Production preset: signed receipts, persisted evidence, WAL, fail-closed."""
     return RuntimeConfig(
         mode=RuntimeMode.PRODUCTION,
         evidence_path=str(evidence_path),
@@ -139,6 +148,7 @@ def production_runtime_config(
         mpc_horizon=1,
         ensemble_size=5,
         max_candidates=5,
+        wal_path=str(wal_path) if wal_path else None,
     )
 
 

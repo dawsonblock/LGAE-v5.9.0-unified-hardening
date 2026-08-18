@@ -19,6 +19,7 @@ def _production_enforcer():
         receipt_path="/tmp/receipts.jsonl",
         signing_key="test-key",
         require_signed_receipts=True,
+        wal_path="/tmp/wal.jsonl",
     ))
 
 

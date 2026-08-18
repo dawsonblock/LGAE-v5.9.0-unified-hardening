@@ -163,9 +163,16 @@ class LGAERuntime:
         # Seqlock-style read coordinator (Phase 3): commits are bracketed by
         # a write epoch so optimistic readers retry on stale reads.
         self.read_coordinator = GraphReadCoordinator()
+        # v5.11 Phase 12: WAL for crash-safe transactions.
+        self._wal = None
+        if self.runtime_config.wal_path is not None:
+            from .wal import WriteAheadLog
+            self._wal = WriteAheadLog(self.runtime_config.wal_path)
         self._commit_channel = CommitChannel(
             self.engine, self.boundary, component="engine",
             read_coordinator=self.read_coordinator,
+            wal=self._wal,
+            require_wal=self.runtime_config.is_production,
         )
         # Mandatory cache coherence (Phase 4): a commit event bus drives
         # selective invalidation of declared-cache dependencies.
