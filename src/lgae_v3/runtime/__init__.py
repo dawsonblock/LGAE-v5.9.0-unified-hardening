@@ -112,6 +112,9 @@ from .structural_credit import (
     temporal_credit, baseline_credit,
 )
 from .replay import ReplayTransition, ReplayBuffer
+from .hard_negative_replay import (
+    HardNegative, HardNegativeMiner, augment_buffer_with_hard_negatives,
+)
 from .canonical_runtime import LGAERuntime, UnauthorizedMutationError
 
 __all__ = [
@@ -266,4 +269,7 @@ __all__ = [
     "baseline_credit",
     "ReplayTransition",
     "ReplayBuffer",
+    "HardNegative",
+    "HardNegativeMiner",
+    "augment_buffer_with_hard_negatives",
 ]
