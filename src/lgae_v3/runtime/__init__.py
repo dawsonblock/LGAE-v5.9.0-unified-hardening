@@ -72,6 +72,9 @@ from .adversarial import (
 from .profiling import PhaseTiming, ProfileReport, RuntimeProfiler
 from .merkle_evidence import MerkleProof, MerkleTree, BatchEvidence, verify_proof
 from .checkpointing import Checkpoint, CheckpointChain
+from .wal import (
+    WALRecordType, WALRecord, WALTransaction, WriteAheadLog, recover_transactions,
+)
 from .canonical_runtime import LGAERuntime, UnauthorizedMutationError
 
 __all__ = [
@@ -170,4 +173,9 @@ __all__ = [
     "verify_proof",
     "Checkpoint",
     "CheckpointChain",
+    "WALRecordType",
+    "WALRecord",
+    "WALTransaction",
+    "WriteAheadLog",
+    "recover_transactions",
 ]
