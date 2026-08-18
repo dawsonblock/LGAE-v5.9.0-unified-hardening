@@ -42,6 +42,10 @@ from .qualification import (
     SafetyCheckStatus, SafetyCheckResult, SafetyQualificationReport,
     SafetyGateError, run_safety_qualification, assert_safety_gate,
 )
+from .scientific_qualification import (
+    ScientificMetric, ScientificQualificationReport,
+    ScientificGateError, assert_scientific_gate,
+)
 from .canonical_runtime import LGAERuntime, UnauthorizedMutationError
 
 __all__ = [
@@ -95,4 +99,8 @@ __all__ = [
     "SafetyGateError",
     "run_safety_qualification",
     "assert_safety_gate",
+    "ScientificMetric",
+    "ScientificQualificationReport",
+    "ScientificGateError",
+    "assert_scientific_gate",
 ]
