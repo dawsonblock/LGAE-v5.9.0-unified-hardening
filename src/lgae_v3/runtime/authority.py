@@ -201,6 +201,7 @@ class CommitChannel:
         read_coordinator: GraphReadCoordinator | None = None,
         wal: Any = None,
         require_wal: bool = False,
+        capability: Any = None,
     ) -> None:
         boundary.assert_can_mutate(component)
         self._engine = engine
@@ -209,6 +210,7 @@ class CommitChannel:
         self._read_coordinator = read_coordinator
         self._wal = wal
         self._require_wal = require_wal
+        self._capability = capability
         self._commit_count = 0
         self._last_transaction_id: str | None = None
 
@@ -415,12 +417,12 @@ class CommitChannel:
         DEPRECATED in v5.11. Use commit(transaction, authorization) instead.
         Kept for backward compatibility with existing engine callers.
         """
-        return self._bracket(lambda: self._engine.evaluate_and_maybe_commit(mutation))
+        return self._bracket(lambda: self._engine.evaluate_and_maybe_commit(mutation, capability=self._capability))
 
     def evaluate_fiber_action(self, *args, **kwargs) -> Any:
         """Legacy path for fiber actions."""
-        return self._bracket(lambda: self._engine.evaluate_fiber_action(*args, **kwargs))
+        return self._bracket(lambda: self._engine.evaluate_fiber_action(*args, capability=self._capability, **kwargs))
 
     def evaluate_gauge_action(self, *args, **kwargs) -> Any:
         """Legacy path for gauge actions."""
-        return self._bracket(lambda: self._engine.evaluate_gauge_action(*args, **kwargs))
+        return self._bracket(lambda: self._engine.evaluate_gauge_action(*args, capability=self._capability, **kwargs))

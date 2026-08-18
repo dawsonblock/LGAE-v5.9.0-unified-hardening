@@ -106,6 +106,11 @@ class LGAERuntime:
                 )
 
         self._engine = engine if engine is not None else LGAEEngine(graph, self.config)
+        # v5.11 Phase 2: Generate exactly one authority capability.
+        # This token is required for all engine mutation methods.
+        from .state.authority_token import _AuthorityCapability
+        self._authority_capability = _AuthorityCapability(id(self))
+        self._engine._set_authority_capability(self._authority_capability)
         self.executive = executive or StructuralExecutive(self.config)
 
         util = utility_fn or self.runtime_config.utility_fn or _default_utility
@@ -173,6 +178,7 @@ class LGAERuntime:
             read_coordinator=self.read_coordinator,
             wal=self._wal,
             require_wal=self.runtime_config.is_production,
+            capability=self._authority_capability,
         )
         # Mandatory cache coherence (Phase 4): a commit event bus drives
         # selective invalidation of declared-cache dependencies.
