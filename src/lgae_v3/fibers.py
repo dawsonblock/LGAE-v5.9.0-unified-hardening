@@ -26,6 +26,23 @@ class FiberStateSnapshot:
             self.utility_ema, self.spawn_counter, self.gamma_ema,
         )))
 
+    def state_hash(self) -> str:
+        """Deterministic hash of the fiber snapshot state.
+
+        v5.11 Phase 4: Required for deterministic transaction identity.
+        """
+        import hashlib
+        h = hashlib.sha256()
+        for tensor in (
+            self.latent.detach(), self.gate_logits.detach(), self.active_mask,
+            self.age, self.utility_ema, self.spawn_counter, self.gamma_ema,
+        ):
+            x = tensor.detach().cpu().contiguous()
+            h.update(str(x.dtype).encode())
+            h.update(str(tuple(x.shape)).encode())
+            h.update(x.view(torch.uint8).numpy().tobytes())
+        return h.hexdigest()
+
 
 class FixedWidthFiberLatent(nn.Module):
     """Static [N,D_max] latent with dynamic per-node active capacity."""

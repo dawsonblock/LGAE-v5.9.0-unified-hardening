@@ -84,7 +84,11 @@ class WALTransaction:
 
 
 class WriteAheadLog:
-    """A crash-safe write-ahead log."""
+    """A crash-safe write-ahead log.
+
+    v5.11 Sprint 2: Counters (LSN, txn_id) are restored from existing
+    records on reopen. This ensures monotonicity across restarts.
+    """
 
     def __init__(self, path: str | Path) -> None:
         self.path = Path(path)
@@ -92,6 +96,35 @@ class WriteAheadLog:
         self._lsn = 0
         self._next_txn_id = 0
         self._active_txns: dict[int, WALTransaction] = {}
+        # v5.11 D11-006: Restore counters from existing records.
+        self._restore_counters()
+
+    def _restore_counters(self) -> None:
+        """Restore LSN and next_txn_id from existing WAL records.
+
+        D11-006 fix: Without this, reopening a WAL resets counters to 0,
+        which can cause txn_id collisions and LSN non-monotonicity.
+        """
+        if not self.path.exists():
+            return
+        max_lsn = 0
+        max_txn_id = -1
+        try:
+            with open(self.path, "r", encoding="utf-8") as f:
+                for line in f:
+                    line = line.strip()
+                    if not line:
+                        continue
+                    try:
+                        record = WALRecord.deserialize(line)
+                        max_lsn = max(max_lsn, int(record.lsn))
+                        max_txn_id = max(max_txn_id, int(record.txn_id))
+                    except (json.JSONDecodeError, KeyError, ValueError):
+                        continue
+        except OSError:
+            return
+        self._lsn = max_lsn
+        self._next_txn_id = max_txn_id + 1
 
     def _append(self, record: WALRecord) -> WALRecord:
         with open(self.path, "a", encoding="utf-8") as f:
@@ -217,10 +250,12 @@ def replay_committed_transactions(
 ) -> list[dict[str, Any]]:
     """Replay committed WAL transactions onto an engine.
 
+    v5.11 Sprint 2: Now replays graph, fiber, and gauge deltas.
+
     This is the crash-recovery procedure. It:
     1. Reads all WAL records.
     2. Identifies committed transactions (have COMMIT, no ABORT).
-    3. Re-applies each committed transaction's graph delta to the engine.
+    3. Re-applies each committed transaction's deltas to the engine.
     4. Returns a list of replay results.
 
     Transactions without a COMMIT record are silently discarded —
@@ -231,6 +266,7 @@ def replay_committed_transactions(
     Never S_n + partial(Δ).
     """
     from ..types import GraphBuffers
+    import torch
 
     wal = WriteAheadLog(wal_path)
     records = list(wal.iter_records())
@@ -239,12 +275,12 @@ def replay_committed_transactions(
     results: list[dict[str, Any]] = []
     for txn_id, mutations in committed.items():
         for mutation in mutations:
-            if mutation.get("kind") == "graph":
+            kind = mutation.get("kind")
+            if kind == "graph":
                 state = mutation.get("shadow_graph_state")
                 if state is not None:
                     shadow = GraphBuffers.from_state_dict(state)
                     engine.graph = shadow
-                    # v5.11 Phase 8: bump version to match commit semantics.
                     engine.graph.bump_version()
                     if hasattr(engine, "_invalidate_neighbor_indices"):
                         engine._invalidate_neighbor_indices("wal_recovery")
@@ -253,5 +289,42 @@ def replay_committed_transactions(
                         "kind": "graph",
                         "applied": True,
                         "new_hash": engine.authority_hash(),
+                    })
+            elif kind == "fiber":
+                fiber_state = mutation.get("fiber_state", {})
+                if fiber_state and hasattr(engine, "fibers"):
+                    # Restore fiber state from serialized snapshot.
+                    fibers = engine.fibers
+                    if hasattr(fibers, "latent"):
+                        for attr in ("latent", "gate_logits", "active_mask", "age",
+                                    "utility_ema", "spawn_counter", "gamma_ema"):
+                            if attr in fiber_state:
+                                tensor = getattr(fibers, attr, None)
+                                if tensor is not None:
+                                    restored = torch.tensor(
+                                        fiber_state[attr],
+                                        dtype=tensor.dtype,
+                                        device=tensor.device,
+                                    )
+                                    tensor.copy_(restored)
+                    results.append({
+                        "txn_id": txn_id,
+                        "kind": "fiber",
+                        "applied": True,
+                    })
+            elif kind == "gauge":
+                gauge_raw = mutation.get("gauge_raw")
+                if gauge_raw is not None and hasattr(engine, "gauge_connections") \
+                   and engine.gauge_connections is not None:
+                    raw = torch.tensor(
+                        gauge_raw,
+                        dtype=engine.gauge_connections.raw_generators.dtype,
+                        device=engine.gauge_connections.raw_generators.device,
+                    )
+                    engine.gauge_connections.raw_generators.copy_(raw)
+                    results.append({
+                        "txn_id": txn_id,
+                        "kind": "gauge",
+                        "applied": True,
                     })
     return results

@@ -359,6 +359,7 @@ class CommitChannel:
                         "base_state_hash": transaction.base_state_hash,
                         "base_state_version": transaction.base_state_version,
                     })
+                    # v5.11 Sprint 2 D11-004: Serialize ALL transaction components.
                     if transaction.graph_delta is not None:
                         sg = transaction.graph_delta.shadow_graph
                         sd = sg.to_state_dict()
@@ -373,6 +374,30 @@ class CommitChannel:
                             "shadow_graph_hash": sg.state_hash(),
                             "shadow_graph_state": json_state,
                             "mutation_name": transaction.graph_delta.mutation_name,
+                        })
+                    # Serialize fiber delta.
+                    if transaction.fiber_delta is not None:
+                        snap = transaction.fiber_delta.shadow_fiber_snapshot
+                        fiber_state = {}
+                        if hasattr(snap, "latent"):
+                            for attr in ("latent", "gate_logits", "active_mask", "age",
+                                        "utility_ema", "spawn_counter", "gamma_ema"):
+                                val = getattr(snap, attr, None)
+                                if val is not None and hasattr(val, "tolist"):
+                                    fiber_state[attr] = val.detach().cpu().tolist()
+                        self._wal.write(wal_txn_id, {
+                            "kind": "fiber",
+                            "fiber_hash": transaction.fiber_delta.to_hash(),
+                            "fiber_state": fiber_state,
+                            "action": transaction.fiber_delta.action,
+                        })
+                    # Serialize gauge delta.
+                    if transaction.gauge_delta is not None:
+                        raw = transaction.gauge_delta.shadow_gauge_raw
+                        self._wal.write(wal_txn_id, {
+                            "kind": "gauge",
+                            "gauge_raw": raw.detach().cpu().tolist(),
+                            "action": transaction.gauge_delta.action,
                         })
 
                 # Apply graph delta.
