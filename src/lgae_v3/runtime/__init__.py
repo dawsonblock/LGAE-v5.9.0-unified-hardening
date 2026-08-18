@@ -71,6 +71,7 @@ from .adversarial import (
 )
 from .profiling import PhaseTiming, ProfileReport, RuntimeProfiler
 from .merkle_evidence import MerkleProof, MerkleTree, BatchEvidence, verify_proof
+from .checkpointing import Checkpoint, CheckpointChain
 from .canonical_runtime import LGAERuntime, UnauthorizedMutationError
 
 __all__ = [
@@ -167,4 +168,6 @@ __all__ = [
     "MerkleTree",
     "BatchEvidence",
     "verify_proof",
+    "Checkpoint",
+    "CheckpointChain",
 ]
