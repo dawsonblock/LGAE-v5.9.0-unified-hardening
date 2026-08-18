@@ -37,12 +37,37 @@ class WALRecordType(str, Enum):
 
 @dataclass(frozen=True, slots=True)
 class WALRecord:
-    """One record in the write-ahead log."""
+    """One record in the write-ahead log.
+
+    v5.11-RC Phase 8: Records are hash-chained for tamper detection.
+    Each record includes:
+    - previous_record_hash: hash of the previous record (or "" for the first)
+    - record_hash: SHA256(previous_record_hash || canonical(record))
+    """
     txn_id: int
     record_type: WALRecordType
     lsn: int  # log sequence number
     payload: dict[str, Any] = field(default_factory=dict)
     timestamp: float = 0.0
+    previous_record_hash: str = ""
+    record_hash: str = ""
+
+    def _canonical_content(self) -> str:
+        """Canonical JSON of the record content (excluding hash fields)."""
+        return json.dumps({
+            "txn_id": int(self.txn_id),
+            "record_type": self.record_type.value,
+            "lsn": int(self.lsn),
+            "payload": self.payload,
+            "timestamp": float(self.timestamp),
+        }, sort_keys=True, separators=(",", ":"))
+
+    def compute_hash(self, prev_hash: str) -> str:
+        """Compute the record hash given the previous record's hash."""
+        h = hashlib.sha256()
+        h.update(prev_hash.encode())
+        h.update(self._canonical_content().encode())
+        return h.hexdigest()
 
     def serialize(self) -> str:
         return json.dumps({
@@ -51,6 +76,8 @@ class WALRecord:
             "lsn": int(self.lsn),
             "payload": self.payload,
             "timestamp": float(self.timestamp),
+            "previous_record_hash": self.previous_record_hash,
+            "record_hash": self.record_hash,
         }, sort_keys=True, separators=(",", ":"))
 
     @classmethod
@@ -62,6 +89,8 @@ class WALRecord:
             lsn=int(data["lsn"]),
             payload=data["payload"],
             timestamp=float(data["timestamp"]),
+            previous_record_hash=data.get("previous_record_hash", ""),
+            record_hash=data.get("record_hash", ""),
         )
 
     def to_log(self) -> dict[str, Any]:
@@ -71,6 +100,8 @@ class WALRecord:
             "lsn": int(self.lsn),
             "payload": self.payload,
             "timestamp": float(self.timestamp),
+            "previous_record_hash": self.previous_record_hash,
+            "record_hash": self.record_hash,
         }
 
 
@@ -96,19 +127,23 @@ class WriteAheadLog:
         self._lsn = 0
         self._next_txn_id = 0
         self._active_txns: dict[int, WALTransaction] = {}
+        # v5.11-RC Phase 8: Track the last record hash for chaining.
+        self._last_record_hash: str = ""
         # v5.11 D11-006: Restore counters from existing records.
         self._restore_counters()
 
     def _restore_counters(self) -> None:
-        """Restore LSN and next_txn_id from existing WAL records.
+        """Restore LSN, next_txn_id, and last_record_hash from existing WAL records.
 
         D11-006 fix: Without this, reopening a WAL resets counters to 0,
         which can cause txn_id collisions and LSN non-monotonicity.
+        v5.11-RC Phase 8: Also restores the hash chain.
         """
         if not self.path.exists():
             return
         max_lsn = 0
         max_txn_id = -1
+        last_hash = ""
         try:
             with open(self.path, "r", encoding="utf-8") as f:
                 for line in f:
@@ -119,19 +154,36 @@ class WriteAheadLog:
                         record = WALRecord.deserialize(line)
                         max_lsn = max(max_lsn, int(record.lsn))
                         max_txn_id = max(max_txn_id, int(record.txn_id))
+                        if record.record_hash:
+                            last_hash = record.record_hash
                     except (json.JSONDecodeError, KeyError, ValueError):
                         continue
         except OSError:
             return
         self._lsn = max_lsn
         self._next_txn_id = max_txn_id + 1
+        self._last_record_hash = last_hash
 
     def _append(self, record: WALRecord) -> WALRecord:
+        # v5.11-RC Phase 8: Compute hash chain.
+        prev_hash = self._last_record_hash
+        record_hash = record.compute_hash(prev_hash)
+        # Create a new record with the hash fields populated.
+        chained = WALRecord(
+            txn_id=record.txn_id,
+            record_type=record.record_type,
+            lsn=record.lsn,
+            payload=record.payload,
+            timestamp=record.timestamp,
+            previous_record_hash=prev_hash,
+            record_hash=record_hash,
+        )
         with open(self.path, "a", encoding="utf-8") as f:
-            f.write(record.serialize() + "\n")
+            f.write(chained.serialize() + "\n")
             f.flush()
             os.fsync(f.fileno())
-        return record
+        self._last_record_hash = record_hash
+        return chained
 
     def begin(self, metadata: dict[str, Any] | None = None) -> int:
         """Begin a new transaction. Returns the transaction ID."""
@@ -216,6 +268,33 @@ class WriteAheadLog:
                 line = line.strip()
                 if line:
                     yield WALRecord.deserialize(line)
+
+    def verify_chain(self) -> bool:
+        """Verify the hash chain of all records.
+
+        v5.11-RC Phase 8: Checks that:
+        - Each record's previous_record_hash matches the previous record's hash
+        - Each record's record_hash matches the recomputed hash
+        - LSN is monotonic
+
+        Returns True if the chain is valid, False otherwise.
+        """
+        prev_hash = ""
+        prev_lsn = 0
+        for record in self.iter_records():
+            # Check LSN monotonicity.
+            if record.lsn <= prev_lsn:
+                return False
+            prev_lsn = record.lsn
+            # Check previous_record_hash.
+            if record.previous_record_hash != prev_hash:
+                return False
+            # Check record_hash.
+            expected_hash = record.compute_hash(prev_hash)
+            if record.record_hash != expected_hash:
+                return False
+            prev_hash = record.record_hash
+        return True
 
 
 def recover_transactions(records: list[WALRecord]) -> dict[int, list[dict[str, Any]]]:
