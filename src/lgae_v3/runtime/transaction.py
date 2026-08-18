@@ -61,11 +61,19 @@ class FiberDelta:
     action: str = ""
 
     def to_hash(self) -> str:
-        # FiberStateSnapshot may not be directly hashable; use its state hash.
+        # v5.11 Phase 4: Never use Python hash() in deterministic paths.
+        # FiberStateSnapshot must implement state_hash() for deterministic
+        # transaction identity. If it doesn't, raise rather than fall back
+        # to nondeterministic hash().
         if hasattr(self.shadow_fiber_snapshot, "state_hash"):
             h = self.shadow_fiber_snapshot.state_hash()
         else:
-            h = str(hash(self.shadow_fiber_snapshot))
+            from .state.state_errors import DeterminismError
+            raise DeterminismError(
+                "FiberDelta.to_hash(): shadow_fiber_snapshot must implement "
+                "deterministic state_hash(); Python hash() is not allowed in "
+                "deterministic runtime paths (defect D11-008)"
+            )
         return canonical_hash({"fiber_hash": h, "action": self.action})
 
 
