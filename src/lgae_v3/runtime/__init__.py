@@ -78,6 +78,10 @@ from .wal import (
 from .replayable_decisions import (
     DecisionRecord, DecisionLedger, build_decision_record, verify_replay,
 )
+from .real_graphs import (
+    RealGraphBenchmark, RealGraphSpec, BENCHMARK_SPECS,
+    load_benchmark, list_benchmarks,
+)
 from .canonical_runtime import LGAERuntime, UnauthorizedMutationError
 
 __all__ = [
@@ -185,4 +189,9 @@ __all__ = [
     "DecisionLedger",
     "build_decision_record",
     "verify_replay",
+    "RealGraphBenchmark",
+    "RealGraphSpec",
+    "BENCHMARK_SPECS",
+    "load_benchmark",
+    "list_benchmarks",
 ]
