@@ -127,6 +127,10 @@ from .graph_ops import (
     connected_components, shortest_path_length, count_triangles,
     graph_diameter,
 )
+from .sparse_graph import (
+    SparseGraph, build_sparse_graph, sparse_adjacency_matrix,
+    sparse_to_edge_index,
+)
 from .canonical_runtime import LGAERuntime, UnauthorizedMutationError
 
 __all__ = [
@@ -298,4 +302,8 @@ __all__ = [
     "shortest_path_length",
     "count_triangles",
     "graph_diameter",
+    "SparseGraph",
+    "build_sparse_graph",
+    "sparse_adjacency_matrix",
+    "sparse_to_edge_index",
 ]
