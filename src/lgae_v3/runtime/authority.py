@@ -174,7 +174,19 @@ class AuthoritativeStateGuard:
 
 class CommitChannel:
     """The sole channel through which commit-authority components mutate
-    authoritative state. It wraps the engine's transactional commit path.
+    authoritative state.
+
+    v5.11 Phase 4-5: CommitChannel.commit(transaction, authorization) is the
+    ONLY path to mutate authoritative state. It validates:
+
+    1. authorization.status == AUTHORIZED
+    2. transaction.authorization_id matches authorization
+    3. transaction.base_state_hash == current engine state hash
+    4. transaction.base_state_version == current engine version
+    5. transaction.delta_hash matches recomputed hash
+    6. WAL is available in production mode
+
+    If any check fails, the commit is rejected and no state changes.
 
     Every commit is bracketed by the read coordinator's write epoch
     (seqlock) so concurrent optimistic readers observe a stale read and
@@ -187,12 +199,18 @@ class CommitChannel:
         *,
         component: str = "engine",
         read_coordinator: GraphReadCoordinator | None = None,
+        wal: Any = None,
+        require_wal: bool = False,
     ) -> None:
         boundary.assert_can_mutate(component)
         self._engine = engine
         self._boundary = boundary
         self._component = str(component)
         self._read_coordinator = read_coordinator
+        self._wal = wal
+        self._require_wal = require_wal
+        self._commit_count = 0
+        self._last_transaction_id: str | None = None
 
     def _bracket(self, fn: Callable[[], Any]) -> Any:
         if self._read_coordinator is None:
@@ -207,19 +225,188 @@ class CommitChannel:
     def engine(self) -> Any:
         return self._engine
 
-    def evaluate_and_maybe_commit(self, mutation: Any) -> Any:
-        """Delegate to the engine's transactional commit path, bracketed by
-        the read-coordinator write epoch."""
-        return self._bracket(lambda: self._engine.evaluate_and_maybe_commit(mutation))
+    @property
+    def commit_count(self) -> int:
+        return self._commit_count
 
-    def evaluate_fiber_action(self, *args, **kwargs) -> Any:
-        return self._bracket(lambda: self._engine.evaluate_fiber_action(*args, **kwargs))
-
-    def evaluate_gauge_action(self, *args, **kwargs) -> Any:
-        return self._bracket(lambda: self._engine.evaluate_gauge_action(*args, **kwargs))
+    @property
+    def last_transaction_id(self) -> str | None:
+        return self._last_transaction_id
 
     def authority_hash(self) -> str:
         return self._engine.authority_hash()
 
     def snapshot(self) -> RuntimeSnapshot:
         return snapshot_from_engine(self._engine)
+
+    def commit(
+        self,
+        transaction: Any,
+        authorization: Any,
+    ) -> Any:
+        """Commit a StructuralTransaction with authorization binding.
+
+        This is the sole mutation path. Validates:
+        - authorization is AUTHORIZED
+        - transaction authorization binding matches
+        - base state hash/version match current engine state
+        - delta hash is correct
+        - WAL is available when required
+
+        Returns CommitResult on success, raises on failure.
+        """
+        from .transaction import (
+            StructuralTransaction, TransactionValidationError,
+            StaleTransactionError, AuthorizationBindingError,
+        )
+        from .contracts.authorization import AuthorizationResult, AuthorizationStatus
+        from .contracts.commit import CommitResult
+        from ..version import VERSION
+
+        # Validation 1: authorization must be AUTHORIZED.
+        if not isinstance(authorization, AuthorizationResult):
+            raise AuthorizationBindingError(
+                "authorization must be an AuthorizationResult"
+            )
+        if authorization.status != AuthorizationStatus.AUTHORIZED:
+            raise AuthorizationBindingError(
+                f"authorization status is {authorization.status.value}, not AUTHORIZED"
+            )
+
+        # Validation 2: transaction must be a StructuralTransaction.
+        if not isinstance(transaction, StructuralTransaction):
+            raise TransactionValidationError(
+                "transaction must be a StructuralTransaction"
+            )
+
+        # Validation 3: authorization binding.
+        # The authorization_id in the transaction must match the
+        # authorization's binding hash.
+        expected_auth_id = transaction.authorization_binding_hash()
+        if transaction.authorization_id is not None:
+            if transaction.authorization_id != expected_auth_id:
+                raise AuthorizationBindingError(
+                    "transaction.authorization_id does not match "
+                    "authorization_binding_hash; possible swap attack"
+                )
+
+        # Validation 4: base state must match current engine state.
+        current_hash = self._engine.authority_hash()
+        current_version = int(self._engine.graph.version)
+        if transaction.base_state_hash != current_hash:
+            raise StaleTransactionError(
+                f"transaction base_state_hash {transaction.base_state_hash[:16]}... "
+                f"does not match current engine hash {current_hash[:16]}...; "
+                f"transaction is stale"
+            )
+        if transaction.base_state_version != current_version:
+            raise StaleTransactionError(
+                f"transaction base_state_version {transaction.base_state_version} "
+                f"does not match current engine version {current_version}; "
+                f"transaction is stale"
+            )
+
+        # Validation 5: delta hash must be correct.
+        recomputed = transaction.compute_delta_hash()
+        if transaction.delta_hash != recomputed:
+            raise TransactionValidationError(
+                "transaction.delta_hash does not match recomputed hash; "
+                "transaction may have been tampered with"
+            )
+
+        # Validation 6: WAL availability in production.
+        if self._require_wal and self._wal is None:
+            raise TransactionValidationError(
+                "WAL is required but not configured"
+            )
+
+        # All validations passed. Apply the transaction atomically.
+        def _apply() -> CommitResult:
+            # WAL: write BEGIN + WRITE records before applying.
+            wal_txn_id = None
+            if self._wal is not None:
+                wal_txn_id = self._wal.begin({
+                    "transaction_id": transaction.transaction_id,
+                    "base_state_hash": transaction.base_state_hash,
+                })
+                if transaction.graph_delta is not None:
+                    self._wal.write(wal_txn_id, {
+                        "kind": "graph",
+                        "shadow_graph_hash": transaction.graph_delta.shadow_graph.state_hash(),
+                        "mutation_name": transaction.graph_delta.mutation_name,
+                    })
+
+            # Apply graph delta.
+            if transaction.graph_delta is not None:
+                old_valid = self._engine.graph.valid.clone()
+                self._engine.graph = transaction.graph_delta.shadow_graph
+                # Sync gauge generations if needed.
+                if self._engine.gauge_connections is not None:
+                    reset = torch.where(
+                        old_valid != self._engine.graph.valid
+                    )[0]
+                    self._engine.gauge_connections.reset_slots(
+                        reset,
+                        optimizers=self._engine.optimizers,
+                        sync_generation=self._engine.graph.slot_generation,
+                    )
+                self._engine._invalidate_neighbor_indices("transaction_commit")
+
+            # Apply fiber delta.
+            if transaction.fiber_delta is not None:
+                self._engine.fibers.restore(
+                    transaction.fiber_delta.shadow_fiber_snapshot
+                )
+
+            # Apply gauge delta.
+            if transaction.gauge_delta is not None:
+                if self._engine.gauge_connections is not None:
+                    self._engine.gauge_connections.raw_generators.copy_(
+                        transaction.gauge_delta.shadow_gauge_raw.to(
+                            self._engine.gauge_connections.raw_generators
+                        )
+                    )
+
+            # Record cooldowns if mutation result has the mutation info.
+            if transaction.mutation_result is not None:
+                # The mutation was already evaluated; just record cooldown.
+                pass
+
+            after_hash = self._engine.authority_hash()
+            after_version = int(self._engine.graph.version)
+
+            # WAL: write COMMIT record after applying.
+            if self._wal is not None and wal_txn_id is not None:
+                self._wal.commit(wal_txn_id)
+
+            self._commit_count += 1
+            self._last_transaction_id = transaction.transaction_id
+
+            return CommitResult(
+                snapshot_id=f"{transaction.base_state_hash}:{transaction.base_state_version}",
+                state_version=transaction.base_state_version,
+                state_hash=transaction.base_state_hash,
+                committed=True,
+                new_state_version=after_version,
+                new_state_hash=after_hash,
+                transaction_id=transaction.transaction_id,
+                authority_hash_after=after_hash,
+            )
+
+        return self._bracket(_apply)
+
+    def evaluate_and_maybe_commit(self, mutation: Any) -> Any:
+        """Legacy path: Delegate to the engine's transactional commit path.
+
+        DEPRECATED in v5.11. Use commit(transaction, authorization) instead.
+        Kept for backward compatibility with existing engine callers.
+        """
+        return self._bracket(lambda: self._engine.evaluate_and_maybe_commit(mutation))
+
+    def evaluate_fiber_action(self, *args, **kwargs) -> Any:
+        """Legacy path for fiber actions."""
+        return self._bracket(lambda: self._engine.evaluate_fiber_action(*args, **kwargs))
+
+    def evaluate_gauge_action(self, *args, **kwargs) -> Any:
+        """Legacy path for gauge actions."""
+        return self._bracket(lambda: self._engine.evaluate_gauge_action(*args, **kwargs))

@@ -141,6 +141,11 @@ from .batched_counterfactuals import (
     batched_counterfactual_eval, select_best_counterfactual,
 )
 from .canonical_runtime import LGAERuntime, UnauthorizedMutationError
+from .transaction import (
+    StructuralTransaction, GraphDelta, FiberDelta, GaugeDelta,
+    TransactionValidationError, StaleTransactionError,
+    AuthorizationBindingError, make_graph_transaction,
+)
 
 __all__ = [
     "RuntimeConfig",
@@ -328,4 +333,12 @@ __all__ = [
     "batched_compute_utilities",
     "batched_counterfactual_eval",
     "select_best_counterfactual",
+    "StructuralTransaction",
+    "GraphDelta",
+    "FiberDelta",
+    "GaugeDelta",
+    "TransactionValidationError",
+    "StaleTransactionError",
+    "AuthorizationBindingError",
+    "make_graph_transaction",
 ]

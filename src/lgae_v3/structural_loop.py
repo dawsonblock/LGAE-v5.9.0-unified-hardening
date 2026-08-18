@@ -156,6 +156,30 @@ class StructuralLearningLoop:
             )
         return MutationResult(MutationDecision.ACCEPT, ["no_op"], metadata={"action": action.value})
 
+    def _build_mutation(
+        self,
+        action: StructuralAction,
+        target: dict[str, Any],
+    ):
+        """Build a mutation object from an action + target without executing it.
+
+        v5.11 Phase 5: This separates mutation construction from mutation
+        execution, enabling shadow-only evaluation.
+        """
+        assert self.engine is not None
+        if action in (
+            StructuralAction.ADD_EDGE, StructuralAction.PRUNE_EDGE,
+            StructuralAction.REWEIGHT_AFFINITY, StructuralAction.REWEIGHT_LENGTH,
+            StructuralAction.COUPLED_REWEIGHT,
+        ):
+            return action_to_mutation(
+                action, self.engine.graph, self.engine.fibers().detach(), **target
+            )
+        # Fiber and gauge actions don't have a separate mutation object;
+        # they're handled directly by the engine. Return None to indicate
+        # the action should use the legacy path.
+        return None
+
     def _apply_consolidation_gates(self) -> None:
         """Bind lifecycle gate values to actual spawned fiber channels."""
         if self.engine is None:

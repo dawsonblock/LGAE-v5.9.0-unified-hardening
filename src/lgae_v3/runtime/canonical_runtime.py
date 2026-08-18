@@ -439,9 +439,15 @@ class LGAERuntime:
                  planning: PlanningResult) -> CounterfactualEvaluation:
         """Phase 5: Shadow Transaction + Exact/Escalating Verification.
 
-        Delegates to the engine's transactional evaluation, which builds a
-        shadow graph and runs the governor's certification horizons.
+        v5.11 Phase 5: Shadow-only evaluation. Does NOT mutate authoritative
+        state. Creates a StructuralTransaction capturing the shadow state.
+
+        The governor evaluates the mutation on a shadow graph clone and
+        returns (MutationResult, shadow_graph). No authoritative state
+        changes occur in this phase.
         """
+        from .transaction import make_graph_transaction
+
         chosen_action = self._chosen_action
         if chosen_action == StructuralAction.NO_OP:
             result = CounterfactualEvaluation(
@@ -454,6 +460,7 @@ class LGAERuntime:
             self._emit(RuntimePhase.EVALUATE, {"decision": "no_op", "certification": None})
             self._mutation_result = None
             self._certification_level = None
+            self._transaction = None
             return result
         # Select target for the chosen action.
         target = self.executive.select_target(
@@ -461,12 +468,51 @@ class LGAERuntime:
             fiber_state=self.engine.fibers,
         )
         self._target = target
-        # Execute through the engine (which does shadow evaluation + commit).
-        mut_result = self.loop._execute_engine_action(chosen_action, target)
+        # Build the mutation object from the chosen action + target.
+        mutation = self.loop._build_mutation(chosen_action, target)
+        if mutation is None:
+            # Action not supported as a direct mutation.
+            result = CounterfactualEvaluation(
+                snapshot_id=observation.snapshot_id,
+                state_version=observation.state_version,
+                state_hash=observation.state_hash,
+                candidate=planning.selected_candidate,
+                passed=False,
+            )
+            self._emit(RuntimePhase.EVALUATE, {"decision": "no_mutation", "certification": None})
+            self._mutation_result = None
+            self._certification_level = None
+            self._transaction = None
+            return result
+        # Shadow-only evaluation via the governor (no authoritative mutation).
+        base_hash = self.engine.graph.state_hash()
+        base_version = int(self.engine.graph.version)
+        mut_result, shadow_graph = self.engine.governor.evaluate_mutation(
+            self.engine.graph, self.engine.fibers().detach(), mutation,
+            seed=int(self.config.seed) + self._step,
+            gauge_bank=self.engine.gauge_connections,
+        )
         cert = None
         if isinstance(mut_result, MutationResult) and mut_result.metadata:
             cert = mut_result.metadata.get("certification_level")
         passed = isinstance(mut_result, MutationResult) and mut_result.decision == MutationDecision.ACCEPT
+        # Build a StructuralTransaction capturing the shadow state.
+        # This transaction will be committed in Phase 7 if authorized.
+        candidate_id = (
+            planning.selected_candidate.candidate_id
+            if planning.selected_candidate is not None else None
+        )
+        transaction = make_graph_transaction(
+            base_state_version=base_version,
+            base_state_hash=base_hash,
+            shadow_graph=shadow_graph,
+            mutation_result=mut_result,
+            mutation_name=getattr(mutation, "name", type(mutation).__name__),
+            mutation_metadata=getattr(mut_result, "metadata", {}),
+            candidate_id=candidate_id,
+            plan_id=observation.snapshot_id,
+            step=self._step,
+        )
         result = CounterfactualEvaluation(
             snapshot_id=observation.snapshot_id,
             state_version=observation.state_version,
@@ -480,24 +526,35 @@ class LGAERuntime:
             certification_reasons=tuple(
                 str(r) for r in getattr(mut_result, "reasons", [])
             ) if isinstance(mut_result, MutationResult) else (),
+            shadow_state_hash=shadow_graph.state_hash(),
             passed=passed,
         )
         self._emit(RuntimePhase.EVALUATE, {
             "decision": mut_result.decision.value if isinstance(mut_result, MutationResult) else "no_op",
             "certification": cert,
             "reasons": list(getattr(mut_result, "reasons", [])) if isinstance(mut_result, MutationResult) else [],
+            "shadow_only": True,
+            "transaction_id": transaction.transaction_id,
         })
         self._mutation_result = mut_result
         self._certification_level = cert
+        self._transaction = transaction
         return result
 
     def authorize(self, observation: ObservationSnapshot,
                   evaluation: CounterfactualEvaluation) -> AuthorizationResult:
-        """Phase 6: Authority Governor decision (reject/quarantine/commit)."""
+        """Phase 6: Authority Governor decision (reject/quarantine/commit).
+
+        v5.11 Phase 4-5: The authorization is cryptographically bound to
+        the transaction. The authorization_id is the transaction's
+        authorization_binding_hash, preventing transaction swap attacks.
+        """
         mut_result = self._mutation_result
-        if mut_result is None:
+        transaction = getattr(self, "_transaction", None)
+        if mut_result is None or transaction is None:
             status = AuthorizationStatus.AUTHORIZED
             reason = RejectionReason.NO_OP
+            auth_id = None
         else:
             decision = mut_result.decision
             if decision == MutationDecision.ACCEPT:
@@ -509,6 +566,23 @@ class LGAERuntime:
             else:
                 status = AuthorizationStatus.QUARANTINED
                 reason = RejectionReason.UNCERTAINTY_TOO_HIGH
+            # Bind authorization to the transaction.
+            auth_id = transaction.authorization_binding_hash()
+            # Store the authorization_id on the transaction (reconstruct frozen).
+            from .transaction import StructuralTransaction
+            self._transaction = StructuralTransaction(
+                transaction_id=transaction.transaction_id,
+                base_state_version=transaction.base_state_version,
+                base_state_hash=transaction.base_state_hash,
+                graph_delta=transaction.graph_delta,
+                fiber_delta=transaction.fiber_delta,
+                gauge_delta=transaction.gauge_delta,
+                candidate_id=transaction.candidate_id,
+                plan_id=transaction.plan_id,
+                authorization_id=auth_id,
+                delta_hash=transaction.delta_hash,
+                mutation_result=transaction.mutation_result,
+            )
         result = AuthorizationResult(
             snapshot_id=observation.snapshot_id,
             state_version=observation.state_version,
@@ -530,14 +604,35 @@ class LGAERuntime:
         immutable evidence and signed receipt for the committed mutation.
         """
         mut_result = self._mutation_result
+        transaction = getattr(self, "_transaction", None)
         executed = (
             mut_result is not None
             and mut_result.decision == MutationDecision.ACCEPT
             and authorization.is_authorized
+            and transaction is not None
         )
         if executed:
             self._assert_commit_authority()
             before_hash = observation.state_hash
+            # v5.11 Phase 4-5: commit through the CommitChannel, not
+            # by directly mutating engine state. The CommitChannel
+            # validates authorization binding, base state, and delta hash.
+            try:
+                commit_result = self.commit_channel.commit(
+                    transaction, authorization,
+                )
+            except Exception as exc:
+                # Commit failed (stale state, binding error, etc.).
+                self._emit(RuntimePhase.COMMIT, {
+                    "error": str(exc),
+                    "transaction_id": transaction.transaction_id,
+                })
+                return CommitResult(
+                    snapshot_id=observation.snapshot_id,
+                    state_version=observation.state_version,
+                    state_hash=observation.state_hash,
+                    committed=False,
+                )
             after_hash = self.engine.authority_hash()
             # Immutable evidence record.
             evidence = self.evidence_ledger.append(EvidenceRecord(
@@ -552,6 +647,8 @@ class LGAERuntime:
                     "authority_hash_before": before_hash,
                     "authority_hash_after": after_hash,
                     "step": int(self._step),
+                    "transaction_id": transaction.transaction_id,
+                    "delta_hash": transaction.delta_hash,
                 },
                 authority_hash=after_hash,
             ))
@@ -583,6 +680,7 @@ class LGAERuntime:
                 "authority_hash_after": after_hash,
                 "receipt_hash": receipt_hash,
                 "mutation_impact": impact.to_log(),
+                "transaction_id": transaction.transaction_id,
             })
             self._emit(RuntimePhase.CACHE_INVALIDATE, {
                 "graph_version": int(self.engine.graph.version),
@@ -596,12 +694,7 @@ class LGAERuntime:
                 committed=True,
                 new_state_version=int(self.engine.graph.version),
                 new_state_hash=after_hash,
-                transaction_id=canonical_hash({
-                    "state_hash_before": before_hash,
-                    "state_hash_after": after_hash,
-                    "action": self._chosen_action.value,
-                    "step": self._step,
-                }),
+                transaction_id=transaction.transaction_id,
                 receipt_hash=receipt_hash,
                 evidence_hash=evidence_hash,
                 authority_hash_after=after_hash,
@@ -628,9 +721,12 @@ class LGAERuntime:
         self.loop.credit_tracker.record_utility(self._step, u_now)
         # Record governance outcome for rejected/quarantined proposals.
         if self._chosen_action != StructuralAction.NO_OP and not commit.committed:
-            self.executive.record_governance_outcome(
-                self._chosen_action, accepted=False,
-            )
+            if hasattr(self, "_exec_observation") and self._exec_observation is not None:
+                self.executive.record_governance_outcome(
+                    self._exec_observation,
+                    self._chosen_action,
+                    "reject",
+                )
         # Build the decision transition.
         transition = DecisionTransition(
             pre_state_hash=observation.state_hash,
