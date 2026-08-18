@@ -252,19 +252,28 @@ def recover_transactions(records: list[WALRecord]) -> dict[int, list[dict[str, A
 def replay_committed_transactions(
     wal_path: str | Path,
     engine: Any,
+    *,
+    checkpoint_lsn: int = 0,
 ) -> list[dict[str, Any]]:
     """Replay committed WAL transactions onto an engine.
 
-    v5.11 Sprint 2: Now replays graph, fiber, and gauge deltas.
+    v5.11-RC Phase 9: State-aware, idempotent replay.
+
+    For each committed transaction, the replay checks the current engine
+    state against the transaction's base_state_hash:
+    - If current state == base_state_hash → apply the transaction
+    - If current state != base_state_hash → skip (already applied or
+      unknown state). This makes replay idempotent.
+
+    The checkpoint_lsn parameter allows skipping transactions that were
+    already applied before a checkpoint.
 
     This is the crash-recovery procedure. It:
     1. Reads all WAL records.
     2. Identifies committed transactions (have COMMIT, no ABORT).
-    3. Re-applies each committed transaction's deltas to the engine.
-    4. Returns a list of replay results.
-
-    Transactions without a COMMIT record are silently discarded —
-    they represent in-flight work that was interrupted by a crash.
+    3. For each transaction, checks if it needs to be applied.
+    4. Re-applies only transactions that need to be applied.
+    5. Returns a list of replay results.
 
     The central recovery invariant:
         S_restart ∈ { S_n, S_{n+1} }
@@ -277,8 +286,48 @@ def replay_committed_transactions(
     records = list(wal.iter_records())
     committed = recover_transactions(records)
 
+    # Build a map of txn_id -> base_state_hash from BEGIN records.
+    txn_base_hashes: dict[int, str] = {}
+    for record in records:
+        if record.record_type == WALRecordType.BEGIN:
+            txn_base_hashes[record.txn_id] = record.payload.get("base_state_hash", "")
+
     results: list[dict[str, Any]] = []
     for txn_id, mutations in committed.items():
+        # Skip transactions before the checkpoint LSN.
+        if checkpoint_lsn > 0:
+            txn_lsn = next(
+                (r.lsn for r in records
+                 if r.txn_id == txn_id and r.record_type == WALRecordType.BEGIN),
+                0,
+            )
+            if txn_lsn <= checkpoint_lsn:
+                results.append({
+                    "txn_id": txn_id,
+                    "kind": "checkpoint_skip",
+                    "applied": False,
+                    "reason": f"before checkpoint LSN {checkpoint_lsn}",
+                })
+                continue
+
+        # State-aware replay: check if this transaction needs to be applied.
+        base_hash = txn_base_hashes.get(txn_id, "")
+        current_hash = engine.authority_hash() if hasattr(engine, "authority_hash") else ""
+
+        if base_hash and current_hash and current_hash != base_hash:
+            # Current state doesn't match the base state — this transaction
+            # was likely already applied. Skip it (idempotent replay).
+            results.append({
+                "txn_id": txn_id,
+                "kind": "state_aware_skip",
+                "applied": False,
+                "reason": f"current hash {current_hash[:16]} != base hash {base_hash[:16]}",
+                "current_hash": current_hash,
+                "base_hash": base_hash,
+            })
+            continue
+
+        # Apply the transaction.
         for mutation in mutations:
             kind = mutation.get("kind")
             if kind == "graph":
@@ -326,7 +375,7 @@ def replay_committed_transactions(
                         dtype=engine.gauge_connections.raw_generators.dtype,
                         device=engine.gauge_connections.raw_generators.device,
                     )
-                    engine.gauge_connections.raw_generators.copy_(raw)
+                    engine.gauge_connections.raw_generators.data.copy_(raw)
                     results.append({
                         "txn_id": txn_id,
                         "kind": "gauge",
