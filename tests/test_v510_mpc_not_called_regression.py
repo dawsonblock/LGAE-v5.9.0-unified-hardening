@@ -1,11 +1,7 @@
-"""v5.11 Phase 0: regression test documenting the MPC-not-called defect.
+"""v5.11 Phase 2: verify MPC is actually called during step().
 
-MPC planner is instantiated in __init__ when horizon > 1 but step()
-delegates to loop.step() which never uses it. MPC is dead code.
-
-This test PASSES against v5.10, proving the defect exists.
-After Phase 9, this test should be replaced with one that verifies
-MPC actually affects the plan.
+After Phase 2, MPC.plan is called during plan() when horizon > 1.
+This test replaces the v5.10 regression test that documented the defect.
 """
 from __future__ import annotations
 
@@ -13,11 +9,8 @@ from lgae_v3.runtime import LGAERuntime, RuntimeConfig
 from lgae_v3.types import make_graph_buffers
 
 
-def test_mpc_not_used_in_step():
-    """MPC is instantiated but never called during step().
-
-    step() delegates to loop.step() which doesn't use the MPC planner.
-    """
+def test_mpc_is_called_in_step():
+    """MPC.plan is called during step() when horizon > 1."""
     runtime_config = RuntimeConfig(mpc_horizon=3)
     runtime = LGAERuntime(
         make_graph_buffers(6, [(0,1),(1,2),(2,3),(3,4),(4,5)], capacity=32),
@@ -25,7 +18,7 @@ def test_mpc_not_used_in_step():
     )
 
     # MPC is instantiated.
-    assert runtime._mpc is not None, "MPC should be instantiated when horizon > 1"
+    assert runtime._mpc is not None
 
     # Track if MPC.plan is called.
     mpc_called = False
@@ -41,8 +34,8 @@ def test_mpc_not_used_in_step():
     # Run step.
     runtime.step()
 
-    # DEFECT: MPC.plan is never called during step().
-    assert not mpc_called, (
-        "Expected MPC.plan to NOT be called during step() (the defect). "
-        "This test should FAIL after Phase 9 wires MPC into plan()."
+    # MPC.plan must be called during step().
+    assert mpc_called, (
+        "Expected MPC.plan to be called during step(). "
+        "MPC is now wired into plan()."
     )
