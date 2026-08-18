@@ -118,6 +118,10 @@ from .hard_negative_replay import (
 from .offline_rl import (
     OfflineRLConfig, QNetwork, OfflineRLTrainer,
 )
+from .causal_credit import (
+    CausalCreditAssignment, CausalCreditAssigner,
+    average_causal_effect, credit_concentration,
+)
 from .canonical_runtime import LGAERuntime, UnauthorizedMutationError
 
 __all__ = [
@@ -278,4 +282,8 @@ __all__ = [
     "OfflineRLConfig",
     "QNetwork",
     "OfflineRLTrainer",
+    "CausalCreditAssignment",
+    "CausalCreditAssigner",
+    "average_causal_effect",
+    "credit_concentration",
 ]
