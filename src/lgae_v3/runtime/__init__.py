@@ -92,6 +92,11 @@ from .information_gain import (
     ensemble_disagreement_ig, ucb_ig, posterior_variance_reduction_ig,
     compute_ig_correlation, select_information_directed,
 )
+from .epistemic_uncertainty import (
+    EpistemicUncertaintyEstimate,
+    compute_ensemble_uncertainty, compute_distance_penalty,
+    estimate_epistemic_uncertainty, verify_ood_uncertainty_property,
+)
 from .canonical_runtime import LGAERuntime, UnauthorizedMutationError
 
 __all__ = [
@@ -221,4 +226,9 @@ __all__ = [
     "posterior_variance_reduction_ig",
     "compute_ig_correlation",
     "select_information_directed",
+    "EpistemicUncertaintyEstimate",
+    "compute_ensemble_uncertainty",
+    "compute_distance_penalty",
+    "estimate_epistemic_uncertainty",
+    "verify_ood_uncertainty_property",
 ]
